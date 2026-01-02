@@ -9,9 +9,17 @@
 import numpy as np
 from tqdm import tqdm
 import math
-from Dataset import theData
-import DENNMatrices
+from Dataset import theData as theData
+from Dataset import categoryDict
+from JetsSharksDataHolder import theAutoEncoderData
+import ANNMatrices
 import copy
+from scipy.sparse import csc_matrix
+from scipy.sparse.linalg import gmres
+from DANBasisUnorthogonalizer import DANBasisUnorthogonalizer, DANInputUnorthogonalizer
+from GeneralizedNetworkPlotter import NetworkPlotCreator
+import random as rn
+from JetsSharksANNOutput import JSANNOutput
 
 
 
@@ -20,12 +28,13 @@ import copy
 ### Construct Neural Network Equation Solver ###
 ################################################
 
-def NNEquationSolver(DataMemberList, function="exponential", conditionNumber=False, compressToANN=False, leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=0, normalizeOutputs=True, maxAlignment=True, linearCompression=True, nonLinearCompression=False):
+def NNEquationSolver(DataMemberList, trainingData=None, function="exponential", conditionNumber=False, compressToANN=False, leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=0, normalizeOutputs=True, maxAlignment=True, linearCompression=True, nonLinearCompression=False, fastBinaryEquationSolver=False, solveExpectedEntropy=False):
     
     ######################################################################
     ### Construct Output Vector and Data Member List Excluding Outputs ###
 
     outputVectorDict = {}
+    print("Formatting Data...")
     for column in range(len(DataMemberList[-1][-1])):
         outputVectorDictHolder = []
         for dataCluster in range(len(DataMemberList)):
@@ -34,6 +43,7 @@ def NNEquationSolver(DataMemberList, function="exponential", conditionNumber=Fal
     DataListMinusOutput = []
 
     if compressToANN:
+        print("Compressing Dataset...")
         if linearCompression:
             originalDataMemberList = copy.deepcopy(DataMemberList)
             otherOriginalDataMemberList = copy.deepcopy(DataMemberList)
@@ -70,75 +80,64 @@ def NNEquationSolver(DataMemberList, function="exponential", conditionNumber=Fal
             newCluster = dataCluster[:-1]
             DataListMinusOutput.append(newCluster)
     
-    
+    if solveExpectedEntropy:
+        print("Solving Expected Entropy...")
+        totalSum = 0
+        for memberIndex in tqdm(range(len(DataListMinusOutput))):
+            for elementIndex in range(len(DataListMinusOutput[memberIndex])):
+                totalSum += DataListMinusOutput[memberIndex][elementIndex]
+        entropyList = []
+        for inputClusterIndex in tqdm(range(len(DataListMinusOutput))):
+            totalDot = 0
+            for iterateClusterIndex in range(len(DataListMinusOutput)):
+                for elementIndex in range(len(DataListMinusOutput[0])):
+                    totalDot += DataListMinusOutput[inputClusterIndex][elementIndex] * DataListMinusOutput[iterateClusterIndex][elementIndex]
+            clusterEntropy = (totalDot / totalSum) * math.log2(totalSum / totalDot)
+            entropyList.append(clusterEntropy)
 
     #######################################
     ### Constructing Coefficient Matrix ###
 
-    if not compressToANN:
-        coefficientMatrix = []
-        for inputDataCluster in tqdm(DataListMinusOutput):
-            finalEquation = []
-            for iterativeDataCluster in DataListMinusOutput:
-                dotProductSum = 0
-                for index in range(len(inputDataCluster)):
-                    dotProductSum += inputDataCluster[index] * iterativeDataCluster[index]
-                ### insert function "if" statements here ###
-                if function == "":
-                    finalEquation.append(dotProductSum)
-                elif function == "exponential":
-                    if dotProductSum > 0:
-                        finalEquation.append(2**(dotProductSum/len(inputDataCluster)))
-                    else:
-                        finalEquation.append(-2**(-dotProductSum/len(inputDataCluster)))
-                elif function == "sigmoid":
-                    val = 1 / (1 + math.exp(-(dotProductSum/len(inputDataCluster))))
-                    finalEquation.append(val)
-                elif function == "tanh":
-                    val = math.tanh(dotProductSum/len(inputDataCluster))
-                    finalEquation.append(val)
-                elif function == "relu":
-                    val = max(0, dotProductSum/len(inputDataCluster))
-                    finalEquation.append(val)
+    #######################################
+    ### Constructing Coefficient Matrix ###
+    #######################################
 
-            coefficientMatrix.append(finalEquation)
-            
-    else:
-        coefficientMatrix = []
-        for inputDataCluster in tqdm(DataListMinusOutput):
-            finalEquation = []
-            for iterativeDataCluster in DataListMinusOutput:
-                dotProductSum = 0
-                for index in range(len(inputDataCluster)):
-                    dotProductSum += inputDataCluster[index] * iterativeDataCluster[index]
-                ### insert function "if" statements here ###
-                if function == "":
-                    finalEquation.append(dotProductSum)
-                elif function == "exponential":
-                    if dotProductSum > 0:
-                        finalEquation.append(2**(dotProductSum/len(inputDataCluster)))
-                    else:
-                        finalEquation.append(-2**(-dotProductSum/len(inputDataCluster)))
-                elif function == "sigmoid":
-                    val = 1 / (1 + math.exp(-(dotProductSum/len(inputDataCluster))))
-                    finalEquation.append(val)
-                elif function == "tanh":
-                    val = math.tanh(dotProductSum/len(inputDataCluster))
-                    finalEquation.append(val)
-                elif function == "relu":
-                    val = max(0, dotProductSum/len(inputDataCluster))
-                    finalEquation.append(val)
+    print("Constructing Coefficient Matrix...")
 
-            coefficientMatrix.append(finalEquation)
+    firstLayerMatrix = DataListMinusOutput
+
+    coefficientMatrix = []
+
+    for inputDataCluster in tqdm(trainingData if trainingData is not None else firstLayerMatrix):
+        finalEquation = []
+        for iterativeDataCluster in firstLayerMatrix:
+            dotProductSum = sum(inputDataCluster[i] * iterativeDataCluster[i] for i in range(len(inputDataCluster)))
+
+            if function == "":
+                finalEquation.append(dotProductSum)
+            elif function == "exponential":
+                finalEquation.append(100 ** (dotProductSum/len(categoryDict)) if dotProductSum > 0 else -100 **(dotProductSum/len(categoryDict)))
+            elif function == "sigmoid":
+                finalEquation.append(1 / (1 + math.exp(-dotProductSum/len(inputDataCluster))))
+            elif function == "tanh":
+                finalEquation.append(math.tanh(dotProductSum/len(inputDataCluster)))
+            elif function == "relu":
+                finalEquation.append(max(0, dotProductSum/len(inputDataCluster)))
+
+        coefficientMatrix.append(finalEquation)
+
+
 
 
     ##############################################################
     ### Construct Numpy Arrays for Solving System of Equations ###
 
+    print("Constructing Numpy Matrix...")
     numpyCoefficientMatrix = np.array(coefficientMatrix)
 
 
     if conditionNumber:
+        print("Finding Shape, Rank, Condition Number...")
         K = numpyCoefficientMatrix
         print("K shape:", K.shape)
         rank_K = np.linalg.matrix_rank(K)
@@ -153,21 +152,25 @@ def NNEquationSolver(DataMemberList, function="exponential", conditionNumber=Fal
     ### Solve System of Equations ###
 
     SolutionsDict = {}
-    for outputVecKey, outputVec in outputVectorDict.items():
+    print("Training Outputs...")
+    for outputVecKey, outputVec in tqdm(outputVectorDict.items()):
         numpyOutputVector = np.array(outputVec)
         if leastSquareSolutionNorm:
             Solutions = np.linalg.lstsq(numpyCoefficientMatrix, numpyOutputVector, rcond=None)
+        elif fastBinaryEquationSolver:
+            Solutions = gmres(numpyCoefficientMatrix, numpyOutputVector, restart=500)
         elif ridgeRegression:
             n = numpyCoefficientMatrix.shape[1]
             Solutions = [np.linalg.solve(numpyCoefficientMatrix.T @ numpyCoefficientMatrix + lambdaVar * np.eye(n), numpyCoefficientMatrix.T @ numpyOutputVector)]
         SolutionsDict[outputVecKey] = Solutions[0]
+        
         
 
     #############################################################################
     ### Define 1st Layer Matrix and 2nd Layer Matrix for the Class ###
 
 
-    firstLayerMatrix = DataListMinusOutput
+    firstLayerMatrix = DataMemberList
     secondLayerMatrixDict = SolutionsDict
     
 
@@ -189,7 +192,7 @@ class DANtoANNNeuralNetGenerator:
     ### Initialize Neural Network ###
     #################################
 
-    def __init__(self, DataMemberList, firstLayer=[], secondLayerDict={}, function="", compressToANN=True, leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=0, conditionNumber=False, normalizeOutputs=True, maxAlignment=True, linearCompression=True, nonLinearCompression=False):
+    def __init__(self, DataMemberList, trainingData=None, firstLayer=[], secondLayerDict={}, function="", compressToANN=True, leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=0, conditionNumber=False, normalizeOutputs=True, maxAlignment=True, linearCompression=True, nonLinearCompression=False, fastBinaryEquationSolver=False):
         if firstLayer and secondLayerDict:
             self.firstLayerMatrix = firstLayer
             self.secondLayerMatrix = secondLayerDict
@@ -199,14 +202,14 @@ class DANtoANNNeuralNetGenerator:
             self.function = function
             if compressToANN:
                 if leastSquareSolutionNorm:
-                    self.firstLayerMatrix, self.secondLayerMatrix, self.function = NNEquationSolver(self.DataMemberList, self.function, compressToANN=True, conditionNumber=conditionNumber, normalizeOutputs=normalizeOutputs, maxAlignment=maxAlignment, linearCompression=linearCompression, nonLinearCompression=nonLinearCompression)
+                    self.firstLayerMatrix, self.secondLayerMatrix, self.function = NNEquationSolver(DataMemberList=self.DataMemberList, function=self.function, trainingData=trainingData, compressToANN=True, conditionNumber=conditionNumber, normalizeOutputs=normalizeOutputs, maxAlignment=maxAlignment, linearCompression=linearCompression, nonLinearCompression=nonLinearCompression, fastBinaryEquationSolver=fastBinaryEquationSolver)
                 else:
-                    self.firstLayerMatrix, self.secondLayerMatrix, self.function = NNEquationSolver(self.DataMemberList, self.function, compressToANN=True, leastSquareSolutionNorm=leastSquareSolutionNorm, ridgeRegression=ridgeRegression, lambdaVar=lambdaVar, conditionNumber=conditionNumber, normalizeOutputs=normalizeOutputs, maxAlignment=maxAlignment, linearCompression=linearCompression, nonLinearCompression=nonLinearCompression)
+                    self.firstLayerMatrix, self.secondLayerMatrix, self.function = NNEquationSolver(DataMemberList=self.DataMemberList, function=self.function, trainingData=trainingData, compressToANN=True, leastSquareSolutionNorm=leastSquareSolutionNorm, ridgeRegression=ridgeRegression, lambdaVar=lambdaVar, conditionNumber=conditionNumber, normalizeOutputs=normalizeOutputs, maxAlignment=maxAlignment, linearCompression=linearCompression, nonLinearCompression=nonLinearCompression, fastBinaryEquationSolver=fastBinaryEquationSolver)
             else:
                 if leastSquareSolutionNorm:
-                    self.firstLayerMatrix, self.secondLayerMatrix, self.function = NNEquationSolver(self.DataMemberList, self.function, compressToANN=False, conditionNumber=conditionNumber, normalizeOutputs=normalizeOutputs, maxAlignment=maxAlignment, linearCompression=linearCompression, nonLinearCompression=nonLinearCompression)
+                    self.firstLayerMatrix, self.secondLayerMatrix, self.function = NNEquationSolver(DataMemberList=self.DataMemberList, function=self.function, trainingData=trainingData, compressToANN=False, conditionNumber=conditionNumber, normalizeOutputs=normalizeOutputs, maxAlignment=maxAlignment, linearCompression=linearCompression, nonLinearCompression=nonLinearCompression, fastBinaryEquationSolver=fastBinaryEquationSolver)
                 else:
-                    self.firstLayerMatrix, self.secondLayerMatrix, self.function = NNEquationSolver(self.DataMemberList, self.function, compressToANN=False, leastSquareSolutionNorm=leastSquareSolutionNorm, ridgeRegression=ridgeRegression, lambdaVar=lambdaVar, conditionNumber=conditionNumber, normalizeOutputs=normalizeOutputs, maxAlignment=maxAlignment, linearCompression=linearCompression, nonLinearCompression=nonLinearCompression)
+                    self.firstLayerMatrix, self.secondLayerMatrix, self.function = NNEquationSolver(DataMemberList=self.DataMemberList, function=self.function, trainingData=trainingData, compressToANN=False, leastSquareSolutionNorm=leastSquareSolutionNorm, ridgeRegression=ridgeRegression, lambdaVar=lambdaVar, conditionNumber=conditionNumber, normalizeOutputs=normalizeOutputs, maxAlignment=maxAlignment, linearCompression=linearCompression, nonLinearCompression=nonLinearCompression, fastBinaryEquationSolver=fastBinaryEquationSolver)
 
     #######################
     ### Add Data Member ###
@@ -240,7 +243,7 @@ class DANtoANNNeuralNetwork:
         self.exportWeightMatrices = exportWeightMatrices
 
         if exportWeightMatrices:
-            with open("/Users/bALloOniSfOod/Desktop/Achievements/AI-Chess-Project/DENNMatrices.py", "w") as f:
+            with open("/Users/bALloOniSfOod/Desktop/Achievements/AI-Chess-Project/ANNMatrices.py", "w") as f:
                 f.write("matrixList = [\n")
                 f.write("    [\n")
                 for row in self.firstLayerMatrix:
@@ -257,17 +260,20 @@ class DANtoANNNeuralNetwork:
     ###################################################
     ### Run Inputs through First Layer and Function ###
 
-    def getOutput(self, inputDataCluster, printWeights=False):
+    def getOutput(self, inputDataCluster, printWeights=False, outputsAsList=True):
+        print("Getting Output...")
         if self.exportWeightMatrices:
-            firstLayer = DENNMatrices.matrixList[0]
-            secondLayer = DENNMatrices.matrixList[1]
+            firstLayer = ANNMatrices.matrixList[0]
+            secondLayer = ANNMatrices.matrixList[1]
         else:
             firstLayer = self.firstLayerMatrix
             secondLayer = self.secondLayerMatrix
 
         firstLayerOutput = []
         if printWeights:
+            print("Printing Weights...")
             print(secondLayer)
+            print("Weights Printed!")
         for iterativeDataCluster in firstLayer:
             dotProductSum = 0
             for index in range(len(inputDataCluster)):
@@ -276,10 +282,7 @@ class DANtoANNNeuralNetwork:
             if self.function == "":
                 firstLayerOutput.append(dotProductSum)
             elif self.function == "exponential":
-                if dotProductSum > 0:
-                    firstLayerOutput.append(2**(dotProductSum/len(inputDataCluster)))
-                else:
-                    firstLayerOutput.append(-2**(-dotProductSum/len(inputDataCluster)))
+                firstLayerOutput.append(100 ** (dotProductSum/len(categoryDict)) if dotProductSum > 0 else -100 **(dotProductSum/len(categoryDict)))
             elif self.function == "sigmoid":
                 val = 1 / (1 + math.exp(-(dotProductSum/len(inputDataCluster))))
                 firstLayerOutput.append(val)
@@ -303,31 +306,124 @@ class DANtoANNNeuralNetwork:
         #####################
         ### Return Output ###
 
-        return OutputDict
+        if outputsAsList:
+            return list(OutputDict.values())
+        
+        if not outputsAsList:
+            return OutputDict
+
+
+
 
 
 if __name__ == "__main__":
 
+
+    dataset1 = DANBasisUnorthogonalizer(theData, True, featureSimilarityAmplificationMatrixExponentiation=0.3)
     dataset = theData
-    DANNeuralNetHolder = DANtoANNNeuralNetGenerator(dataset, conditionNumber=True, compressToANN=False, function="exponential", leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=0.000001, normalizeOutputs=False, linearCompression=True, nonLinearCompression=False)
+    datasetMinusOutput = copy.deepcopy(theData)
+    for index in range(len(datasetMinusOutput)):
+        datasetMinusOutput[index] = datasetMinusOutput[index][:-1]
+
+
+    DANNeuralNetHolder = DANtoANNNeuralNetGenerator(dataset, conditionNumber=True, compressToANN=False, function="exponential", leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=0.00001, normalizeOutputs=False, linearCompression=True, nonLinearCompression=False, fastBinaryEquationSolver=False)
     DANNeuralNet = DANtoANNNeuralNetwork(DANNeuralNetHolder, exportWeightMatrices=False)
 
-    for data in theData[1:100]:
-        print("Predicted: ", DANNeuralNet.getOutput(data[:-1]), "\n", "Expected: ", data[-1], "\n")
-    print(DANNeuralNet.getOutput([1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1], printWeights=False))
+    DANNeuralNetHolder1 = DANtoANNNeuralNetGenerator(dataset1, conditionNumber=True, compressToANN=False, function="exponential", leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=0.00001, normalizeOutputs=False, linearCompression=True, nonLinearCompression=False, fastBinaryEquationSolver=False)
+    DANNeuralNet1 = DANtoANNNeuralNetwork(DANNeuralNetHolder1, exportWeightMatrices=False)
+
+    # for data in theData[99:100]:
+    #     print("Predicted: ", DANNeuralNet.getOutput(data[:-1], printWeights=True), "\n", "Expected: ", data[-1], "\n")
+
+    
+    inputVec = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 1, 0, 0]
+    # inputVec = dataset[0][:-1]
+    inputVec1 = DANInputUnorthogonalizer(inputVec, theData, featureSimilarityAmplificationMatrixExponentiation=0.3)
+   
+    orthogonalizedDANOutput = DANNeuralNet.getOutput(inputVec)
+    unorthogonalizedDANOutput = DANNeuralNet1.getOutput(inputVec1)
+
+
+    NetworkDict = {"Orthogonal Nonrandom": [orthogonalizedDANOutput], "Unorthogonal Nonrandom": [unorthogonalizedDANOutput]}
+    randomNetworkListofLists = []
+    rows = 27
+    cols = 41
+    # rows = 544
+    # cols = 416
+    for i in range(5):
+        matrix = [[rn.random() for j in range(cols)] for i in range(rows)]
+        for j in range(len(matrix)):
+            matrix[j].append(theData[j][-1])
+        DANNeuralNetHolder2 = DANtoANNNeuralNetGenerator(matrix, trainingData=datasetMinusOutput, conditionNumber=True, compressToANN=False, function="exponential", leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=1, normalizeOutputs=False, linearCompression=True, nonLinearCompression=False, fastBinaryEquationSolver=False)
+        DANNeuralNet2 = DANtoANNNeuralNetwork(DANNeuralNetHolder2, exportWeightMatrices=False)
+        unorthogDANOutput = DANNeuralNet2.getOutput(inputVec)
+        randomNetworkListofLists.append(unorthogDANOutput)
+
+    NetworkDict["Unorthogonal Random"] = randomNetworkListofLists
+
+    dataListMinusOutput = []
+    outputVector = []
+    for dataCluster in theData:
+        newCluster = dataCluster[:-1]
+        output = dataCluster[-1]
+        dataListMinusOutput.append(newCluster)
+        outputVector.append(output) 
+
+    A = np.array(dataListMinusOutput, dtype=float)
+
+    b = np.array(outputVector, dtype=float) 
+
+    # Test with a new input
+    x = np.array(inputVec, dtype=float)
+    
+    newNewData = copy.deepcopy(dataListMinusOutput)
+    DANOutput = []
+    otherx = x.tolist()
+    for cluster in range(len(newNewData)):
+        sum = 0
+        for element in range(len(newNewData[cluster])):
+            sum += otherx[element] * newNewData[cluster][element]
+        DANOutput.append(sum)
+    for clusterIndex in range(len(newNewData)):
+        for element in range(len(newNewData[clusterIndex])):
+            newNewData[clusterIndex][element] = newNewData[clusterIndex][element] * DANOutput[clusterIndex]
+    finalOutputVector = []
+    for elementIndex in range(len(newNewData[0])):
+        outputHolder = []
+        for newClusterIndex in range(len(newNewData)):
+            outputHolder.append(newNewData[newClusterIndex][elementIndex])
+        maxVal = max(outputHolder)
+        finalOutputVector.append(maxVal)
+    b_original = finalOutputVector
+
+    for index in range(len(b_original)):
+        b_original[index] = b_original[index]/11
+
+    NetworkDict["Backprop"] = JSANNOutput
+    
+    NetworkPlotCreator(NetworkDict, dataset[0][-1])
+    
+
+    # print(dataset[0][-1])
+    # print(unorthogonalizedDANOutput)
+    # print(orthogonalizedDANOutput)
+    # print(randomNetworkListofLists[0], "\n")
+    print(dataset[0][-1])
+    print(NetworkDict)
+
+    
+
+
+
+
+
     
 
     
-        
-
-
-
-
-
 
     
 
-    
+
 
     
     
