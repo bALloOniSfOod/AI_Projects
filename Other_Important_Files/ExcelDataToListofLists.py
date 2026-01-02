@@ -2,65 +2,81 @@
 # Written by Ryan Cerauli for the DAN Research Program headed by Anthony F. Beavers @ Indiana University. Copyright 2024. 
 # See https://www.afbeavers.net/drg for more information
 
+# This code enters an excel file with a dataset and converts it into a binary list of lists that is compatible
+# with the other files in this repo
+
+
 import pandas as pd
 import xlwings as xw
 # from DANANNMaker import DANtoANNNeuralNetGenerator
 # from DANANNMaker import DANtoANNNeuralNetwork
 import copy
 from tqdm import tqdm
+import openpyxl
+
+
+import xlwings as xw
 
 
 def ExcelDataToListofLists(originalWorkbook, dataSheet, ListOfListBool=True, CategoryListBool=True, desiredModifications=[[]]):
+
+    print("Opening Excel File...")
+
     wk = xw.Book(originalWorkbook)
-    ws1 = wk.sheets[dataSheet] 
-    CategoryList = [] 
-    y_val = 1
-    while True: 
-        cell_value = ws1.cells(1, y_val).value
-        if cell_value is None:
-            break 
-        CategoryList.append(cell_value)
-        y_val += 1
-    print(CategoryList)
-    testFrame = pd.read_excel(originalWorkbook, dataSheet, engine="openpyxl")
-    DataMemberList = testFrame.values.tolist()
-    if desiredModifications[0] != []:
-        for list2 in desiredModifications:
-            columnNum = list2[0] - 1
-            action = list2[1]
-            specificity = list2[2]
+    ws = wk.sheets[dataSheet]
+
+    print("Reading entire used range...")
+
+    data = ws.used_range.value
+
+    if not data or len(data) < 2:
+        raise ValueError("Sheet appears to be empty or missing data")
+
+    print("Collecting Data Categories...")
+    CategoryList = data[0]
+    DataMemberList = data[1:]
+
+    print("Modifying Data...")
+
+    if desiredModifications and desiredModifications[0]:
+        for mod in desiredModifications:
+            columnNum = mod[0] 
+            action = mod[1]
+            specificity = mod[2]
+
             if action == "round":
-                for memberList in DataMemberList:
-                    memberList[columnNum] = round(memberList[columnNum], specificity)
+                for row in DataMemberList:
+                    if row[columnNum] is not None:
+                        row[columnNum] = round(row[columnNum], specificity)
+
             elif action == "splice":
-                holderList3 = []
-                for memberList1 in DataMemberList:
-                    holderList3.append(memberList1[columnNum])
-                maxVal = max(holderList3)
-                minVal = min(holderList3)
-                range1 = maxVal - minVal
-                spliceRange = range1 / specificity
-                holderVal = minVal
-                spliceList = [minVal]
-                for i in range(specificity):
-                    spliceList.append(holderVal + spliceRange)
-                    holderVal += spliceRange
-                holderNum = 0
-                for memberList2 in DataMemberList:
-                    for spliceItem in spliceList:
-                        if (memberList2[columnNum] > holderNum and memberList2[columnNum] < spliceItem) or (memberList2[columnNum] == spliceItem):
-                            memberList2[columnNum] = spliceItem
+                col_vals = [row[columnNum] for row in DataMemberList if row[columnNum] is not None]
+
+                minVal = min(col_vals)
+                maxVal = max(col_vals)
+
+                spliceRange = (maxVal - minVal) / specificity
+                spliceBins = [minVal + i * spliceRange for i in range(specificity + 1)]
+
+                for row in DataMemberList:
+                    val = row[columnNum]
+                    for i in range(len(spliceBins) - 1):
+                        if spliceBins[i] <= val <= spliceBins[i + 1]:
+                            row[columnNum] = spliceBins[i + 1]
                             break
-                        else:
-                            holderNum = spliceItem
-    if ListOfListBool and not CategoryListBool:
-        return DataMemberList
-    elif ListOfListBool and CategoryListBool:
+
+            else:
+                raise ValueError(f"Unknown modification action: {action}")
+
+    if ListOfListBool and CategoryListBool:
         return DataMemberList, CategoryList
-    elif not ListOfListBool and CategoryListBool:
+    elif ListOfListBool:
+        return DataMemberList
+    elif CategoryListBool:
         return CategoryList
     else:
-        raise ValueError("Must Return Data List of Lists and/or Category List")
+        raise ValueError("Must return data list and/or category list")
+
 
 
 
@@ -68,6 +84,9 @@ def ListofListsToBinaryEncodingListOfLists(ListOfLists, desiredOutputColumnList,
     newBinaryEncodingListOfLists = []
     finalBinaryEncodingList = []
     finalCategoryElementList = []
+
+    print("Constructing Binary Bins...")
+
     for ListOfListIndex in tqdm(range(len(ListOfLists[1]))):
         indexCategoryList = []
         for dataMember in ListOfLists:
@@ -80,6 +99,9 @@ def ListofListsToBinaryEncodingListOfLists(ListOfLists, desiredOutputColumnList,
             thisCategoryList.append(dataList[0])
         finalBinaryEncodingList.append(thisBinaryList)
         finalCategoryElementList.append(thisCategoryList)
+
+    print("Converting and Formatting Data to Binary...")
+
     for dataMember in tqdm(ListOfLists):
         binaryDataMemberListofLists = copy.deepcopy(finalBinaryEncodingList)
         for categoryIndex in range(len(dataMember)):
@@ -111,7 +133,13 @@ def ListofListsToBinaryEncodingListOfLists(ListOfLists, desiredOutputColumnList,
         finalBinaryEncodingHolderList.append(binaryDataMemberListofListsNew[-1])
         newBinaryEncodingListOfLists.append(finalBinaryEncodingHolderList)
     if printBinaryDataset:
+
+        print("Printing Binary Dataset...")
+
         print(newBinaryEncodingListOfLists)
+
+    print("Returning Binary Dataset")
+
     return newBinaryEncodingListOfLists
     
     
@@ -120,8 +148,13 @@ def ListofListsToBinaryEncodingListOfLists(ListOfLists, desiredOutputColumnList,
 
 if __name__ == "__main__":
 
-    OriginalListOfLists, categoryList = ExcelDataToListofLists("Book447.xlsx", "Sheet9", desiredModifications=[[]])
-    BinaryListOfLists = ListofListsToBinaryEncodingListOfLists(OriginalListOfLists, [0,1,2], printBinaryDataset=False, includeOutputsInInputs=True, binaryFinalOutputs=True)
+    outputList = []
+    for i in range(998):
+        outputList.append(i)
+
+    
+    OriginalListOfLists, categoryList = ExcelDataToListofLists("DataExcelWorkbook.xlsx", "Sheet2", desiredModifications=[[0, "splice", 150]])
+    BinaryListOfLists = ListofListsToBinaryEncodingListOfLists(OriginalListOfLists, [0], printBinaryDataset=False, includeOutputsInInputs=True, binaryFinalOutputs=False)
     print("it was done")
     with open("/Users/bALloOniSfOod/Desktop/Achievements/AI-Chess-Project/Dataset.py", "w") as f:
         variable_name = "theData"
