@@ -6,66 +6,79 @@
 # This is code for a compression algorithm that compresses a binary DAN into a non-binary DAN with the number of rows = rank(DAN). 
 # Since a DAN is wholly constructed via the dataset, this amounts to essentially a PCA compression of the dataset followed by the 
 # introduction of the DAN characteristics in order to gain its functionality as an AI network.
-# NOTE: AI was used extensively in this code out of laziness, the original code for this is in DAN->DENN_Neural_Network.py in the 
-# DENN_Files. 
+
 
 import numpy as np
-from Dataset import theData, categoryDict
+from Dataset import theData
+from Dataset import categoryDict as categoryDict
 import copy
 
 
-# --------------------------
-# 1. Compression function
-# --------------------------
-def compress_dataset_orthonormal(A, b):
-    """
-    Compresses dataset A, b using an orthonormal row basis.
+def compressDAN(dataset):
+
+    print("Finding Independent Rows of Data...")
+
+    outputs = []
+
+    for index in range(len(dataset)):
+        outputs.append(dataset[index][-1])
+        dataset[index] = dataset[index][:-1]
+
+    dataset = np.array(dataset, dtype=float)
+    outputs = np.array(outputs, dtype=float)
+
+    print("Constructing Row Basis...")
+
+    independentRows = []
+    for i in range(dataset.shape[0]):
+        candidate = dataset[independentRows + [i], :] if independentRows else dataset[[i], :]
+        if np.linalg.matrix_rank(candidate) > len(independentRows):
+            independentRows.append(i)
+    rowBasis = dataset[independentRows, :]
+    r = len(rowBasis)
+
+    print("Compressing Dataset...")
     
-    Returns:
-        row_basis_ortho : orthonormal row basis (r x n_features)
-        coeffs_A        : coefficients to reconstruct all rows (n_rows x r)
-        b_basis         : outputs corresponding to independent rows (r,)
-        independent_rows: indices of rows chosen as basis
-    """
-    # Find independent rows
-    independent_rows = []
-    for i in range(A.shape[0]):
-        candidate = A[independent_rows + [i], :] if independent_rows else A[[i], :]
-        if np.linalg.matrix_rank(candidate) > len(independent_rows):
-            independent_rows.append(i)
+    Q, R = np.linalg.qr(rowBasis.T)
+    compressedDataset = Q.T 
 
-    row_basis = A[independent_rows, :]
-    r = len(row_basis)
+    print("Computing Coefficients for Reconstruction...")
 
-    # Orthonormalize row basis using QR
-    Q, R = np.linalg.qr(row_basis.T)
-    row_basis_ortho = Q.T  # shape r x n_features
+    datasetCoefficients = np.zeros((dataset.shape[0], r))
+    for j in range(dataset.shape[0]):
+        datasetCoefficients[j] = np.linalg.lstsq(compressedDataset.T, dataset[j].reshape(-1,1), rcond=None)[0].flatten()
 
-    # Compute coefficients for reconstructing all rows
-    coeffs_A = np.zeros((A.shape[0], r))
-    for j in range(A.shape[0]):
-        coeffs_A[j] = np.linalg.lstsq(row_basis_ortho.T, A[j].reshape(-1,1), rcond=None)[0].flatten()
+    outputBasis = outputs[independentRows]
 
-    # Outputs of the basis rows
-    b_basis = b[independent_rows]
+    print("Returning Compressed Dataset, Reconstruction Coefficients, Output Basis, and Independent Rows...")
 
-    return row_basis_ortho, coeffs_A, b_basis, independent_rows
+    return compressedDataset, datasetCoefficients, outputBasis, independentRows
 
-# --------------------------
-# 2. Reconstruction function
-# --------------------------
-def reconstruct_outputs(x, row_basis_ortho, coeffs_A, retrieveOutputVector=True):
-    """
-    Reconstructs outputs for a new input vector x using the orthonormal compressed dataset.
-    """
-    y_compressed = row_basis_ortho @ x
+
+
+def reconstructOutputs(InputVector, compressedDataset, datasetCoefficients, originalDataset, retrieveOutputVector=True, normOutput=True):
+    
+    numpyInputVector = np.array(InputVector, dtype=float)
+
+    print("Projecting Input Vector to New Space...")
+
+    yCompressed = compressedDataset @ numpyInputVector
+    originalDatasetMinusOutput = copy.deepcopy(originalDataset)
+
+    for index in range(len(originalDataset)):
+        originalDatasetMinusOutput[index] = originalDatasetMinusOutput[index][:-1]
+
     if not retrieveOutputVector:
-        return coeffs_A @ y_compressed
+        return datasetCoefficients @ yCompressed
+    
     else:
-        theNewData = copy.deepcopy(dataListMinusOutput)
-        DANOutput = (coeffs_A @ y_compressed).tolist()
-        for clusterIndex in range(len(dataListMinusOutput)):
-            for element in range(len(dataListMinusOutput[clusterIndex])):
+
+        print("Reconstructing Output in Original Basis...")
+
+        theNewData = copy.deepcopy(originalDatasetMinusOutput)
+        DANOutput = (datasetCoefficients @ yCompressed).tolist()
+        for clusterIndex in range(len(originalDatasetMinusOutput)):
+            for element in range(len(originalDatasetMinusOutput[clusterIndex])):
                 theNewData[clusterIndex][element] = theNewData[clusterIndex][element] * DANOutput[clusterIndex]
         finalOutputVector = []
         for elementIndex in range(len(theNewData[0])):
@@ -74,67 +87,19 @@ def reconstruct_outputs(x, row_basis_ortho, coeffs_A, retrieveOutputVector=True)
                 outputHolder.append(theNewData[newClusterIndex][elementIndex])
             maxVal = max(outputHolder)
             finalOutputVector.append(maxVal)
-        return finalOutputVector
+        if not normOutput:
+            return finalOutputVector
+        if normOutput:
+            for i in range(len(finalOutputVector)):
+                finalOutputVector[i] = finalOutputVector[i] / sum(InputVector)
+            return finalOutputVector
 
 
-# --------------------------
-# 3. Example usage
-# --------------------------
 if __name__ == "__main__":
 
-    retrieveOutputVectorBool = True
-    dataListMinusOutput = []
-    outputVector = []
-    for dataCluster in theData:
-        newCluster = dataCluster[:-1]
-        output = dataCluster[-1]
-        dataListMinusOutput.append(newCluster)
-        outputVector.append(output) 
+    compressedDataset, datasetCoefficients, outputBasis, independentRows = compressDAN(theData)
+    
+    print(reconstructOutputs([0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 0], compressedDataset, datasetCoefficients, theData))
 
-    A = np.array(dataListMinusOutput, dtype=float)
+    
 
-    b = np.array(outputVector, dtype=float) 
-
-    # Compress dataset
-    row_basis_ortho, coeffs_A, b_basis, independent_rows = compress_dataset_orthonormal(A, b) 
-
-    # Test with a new input
-    x = np.array([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0], dtype=float)
-    if retrieveOutputVectorBool:
-        newNewData = copy.deepcopy(dataListMinusOutput)
-        DANOutput = []
-        otherx = x.tolist()
-        for cluster in range(len(newNewData)):
-            sum = 0
-            for element in range(len(newNewData[cluster])):
-                sum += otherx[element] * newNewData[cluster][element]
-            DANOutput.append(sum)
-        for clusterIndex in range(len(newNewData)):
-            for element in range(len(newNewData[clusterIndex])):
-                newNewData[clusterIndex][element] = newNewData[clusterIndex][element] * DANOutput[clusterIndex]
-        finalOutputVector = []
-        for elementIndex in range(len(newNewData[0])):
-            outputHolder = []
-            for newClusterIndex in range(len(newNewData)):
-                outputHolder.append(newNewData[newClusterIndex][elementIndex])
-            maxVal = max(outputHolder)
-            finalOutputVector.append(maxVal)
-        b_original = finalOutputVector
-    else:
-        b_original = A @ x
-    b_reconstructed = reconstruct_outputs(x, row_basis_ortho, coeffs_A, retrieveOutputVector=retrieveOutputVectorBool) 
-    differenceVector = []
-    for i in range(len(b_original)):
-        b_reconstructed[i] = b_reconstructed[i]/(len(categoryDict)) 
-        b_original[i] = b_original[i]/(len(categoryDict)) ########wjehdfvjsowieuhrfgbndspwehfgvnpwoejhfjk############
-    for element in range(len(b_original)):
-        differenceVector.append(round(b_original[element] - b_reconstructed[element], 10)) 
-        pass
-
-    # Results
-    print("Original row count:", len(A), "\n")
-    print("New row count:", len(independent_rows), "\n") 
-    print("Orthonormal row basis:", row_basis_ortho, "\n") 
-    print("Original outputs:      ", b_original, "\n")
-    print("Reconstructed outputs: ", b_reconstructed, "\n") 
-    print("Difference:            ", differenceVector, "\n")
