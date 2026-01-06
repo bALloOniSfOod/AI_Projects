@@ -1241,7 +1241,16 @@ class DAN:
         for input1 in range(len(self.HolderListDFrame[0])):
             print(self.HolderListDFrame[0][input1], self.HolderListDFrame[1][input1])
 
+    def getMaxValues(self):
+        print("Returning Max Values:")
+        self.finalMaxValList = []
+        for index in range(2, len(self.MaxValList)):
+            if type(self.MaxValList[index][1]) != str:
+                self.finalMaxValList.append(self.MaxValList[index][1])
+        return self.finalMaxValList
+
     def getMaxValue(self):
+        print(self.MaxValList)
         return self.MaxValList[0][1]
 
     def getCategoryMaxValue(self, category, allMaxValues=False, randomMaxValue=True, firstMaxValue=False):
@@ -1403,8 +1412,6 @@ class DAN:
         self.ListOfLists.append(cluster)
         self.DataMemberList.append(cluster)
         replacementDAN.ListOfLists = self.ListOfLists
-        # for i in range(len(self.BigList)):
-        #     print(self.BigList[i], self.pythonDANList[-1][i])
         it = replacementDAN.make()
         if self.printStatements:
             print("Cluster added!")
@@ -1427,3 +1434,4 @@ class DAN:
             raise ValueError("This method is not applicable to a static DAN, consider adding data to existing excel sheet/ListOfLists and use .make()")
         if self.type == "temporal":
             print("?")
+
