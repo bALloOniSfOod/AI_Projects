@@ -19,7 +19,7 @@ from scipy.sparse.linalg import gmres
 from DANBasisUnorthogonalizer import DANBasisUnorthogonalizer, DANInputUnorthogonalizer
 from GeneralizedNetworkPlotter import NetworkPlotCreator
 import random as rn
-from JetsSharksANNOutput import JSANNOutput
+from JetsSharksANN import JetsSharksANNCreator, JetsSharksANNOutput
 
 
 
@@ -335,81 +335,109 @@ if __name__ == "__main__":
     # for data in theData[99:100]:
     #     print("Predicted: ", DANNeuralNet.getOutput(data[:-1], printWeights=True), "\n", "Expected: ", data[-1], "\n")
 
+    def random_binary_lists(num_lists, list_length, ones_per_list=6):
+        result = []
+
+        for _ in range(num_lists):
+            lst = [0] * list_length
+            ones_indices = rn.sample(range(list_length), ones_per_list)
+            for i in ones_indices:
+                lst[i] = 1
+            result.append(lst)
+
+        return result
     
-    inputVec = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 1, 0, 0]
-    # inputVec = dataset[0][:-1]
-    inputVec1 = DANInputUnorthogonalizer(inputVec, theData, featureSimilarityAmplificationMatrixExponentiation=0.3)
-   
-    orthogonalizedDANOutput = DANNeuralNet.getOutput(inputVec)
-    unorthogonalizedDANOutput = DANNeuralNet1.getOutput(inputVec1)
+    inputVecList = random_binary_lists(50, 41, 6)
 
-
-    NetworkDict = {"Orthogonal Nonrandom": [orthogonalizedDANOutput], "Unorthogonal Nonrandom": [unorthogonalizedDANOutput]}
-    randomNetworkListofLists = []
-    rows = 27
-    cols = 41
-    # rows = 544
-    # cols = 416
-    for i in range(5):
-        matrix = [[rn.random() for j in range(cols)] for i in range(rows)]
-        for j in range(len(matrix)):
-            matrix[j].append(theData[j][-1])
-        DANNeuralNetHolder2 = DANtoANNNeuralNetGenerator(matrix, trainingData=datasetMinusOutput, conditionNumber=True, compressToANN=False, function="exponential", leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=1, normalizeOutputs=False, linearCompression=True, nonLinearCompression=False, fastBinaryEquationSolver=False)
-        DANNeuralNet2 = DANtoANNNeuralNetwork(DANNeuralNetHolder2, exportWeightMatrices=False)
-        unorthogDANOutput = DANNeuralNet2.getOutput(inputVec)
-        randomNetworkListofLists.append(unorthogDANOutput)
-
-    NetworkDict["Unorthogonal Random"] = randomNetworkListofLists
-
-    dataListMinusOutput = []
-    outputVector = []
-    for dataCluster in theData:
-        newCluster = dataCluster[:-1]
-        output = dataCluster[-1]
-        dataListMinusOutput.append(newCluster)
-        outputVector.append(output) 
-
-    A = np.array(dataListMinusOutput, dtype=float)
-
-    b = np.array(outputVector, dtype=float) 
-
-    # Test with a new input
-    x = np.array(inputVec, dtype=float)
+    for inputVec in inputVecList:
+        inputVec = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 1, 0, 0]
+        # inputVec = dataset[0][:-1]
+        inputVec1 = DANInputUnorthogonalizer(inputVec, theData, featureSimilarityAmplificationMatrixExponentiation=0.3)
     
-    newNewData = copy.deepcopy(dataListMinusOutput)
-    DANOutput = []
-    otherx = x.tolist()
-    for cluster in range(len(newNewData)):
-        sum = 0
-        for element in range(len(newNewData[cluster])):
-            sum += otherx[element] * newNewData[cluster][element]
-        DANOutput.append(sum)
-    for clusterIndex in range(len(newNewData)):
-        for element in range(len(newNewData[clusterIndex])):
-            newNewData[clusterIndex][element] = newNewData[clusterIndex][element] * DANOutput[clusterIndex]
-    finalOutputVector = []
-    for elementIndex in range(len(newNewData[0])):
-        outputHolder = []
-        for newClusterIndex in range(len(newNewData)):
-            outputHolder.append(newNewData[newClusterIndex][elementIndex])
-        maxVal = max(outputHolder)
-        finalOutputVector.append(maxVal)
-    b_original = finalOutputVector
+        orthogonalizedDANOutput = DANNeuralNet.getOutput(inputVec)
+        unorthogonalizedDANOutput = DANNeuralNet1.getOutput(inputVec1)
 
-    for index in range(len(b_original)):
-        b_original[index] = b_original[index]/11
 
-    NetworkDict["Backprop"] = JSANNOutput
+        NetworkDict = {"Orthogonal Nonrandom": [orthogonalizedDANOutput], "Unorthogonal Nonrandom": [unorthogonalizedDANOutput]}
+
+        randomNetworkListofLists = []
+        rows = 27
+        cols = 41
+        # rows = 544
+        # cols = 416
+        for i in range(5):
+            matrix = [[rn.random() for j in range(cols)] for i in range(rows)]
+            for j in range(len(matrix)):
+                matrix[j].append(theData[j][-1])
+            DANNeuralNetHolder2 = DANtoANNNeuralNetGenerator(matrix, trainingData=datasetMinusOutput, conditionNumber=True, compressToANN=False, function="exponential", leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=1, normalizeOutputs=False, linearCompression=True, nonLinearCompression=False, fastBinaryEquationSolver=False)
+            DANNeuralNet2 = DANtoANNNeuralNetwork(DANNeuralNetHolder2, exportWeightMatrices=False)
+            unorthogDANOutput = DANNeuralNet2.getOutput(inputVec)
+            randomNetworkListofLists.append(unorthogDANOutput)
+
+        NetworkDict["Unorthogonal Random"] = randomNetworkListofLists
+
+        dataListMinusOutput = []
+        outputVector = []
+        for dataCluster in theData:
+            newCluster = dataCluster[:-1]
+            output = dataCluster[-1]
+            dataListMinusOutput.append(newCluster)
+            outputVector.append(output) 
+
+        A = np.array(dataListMinusOutput, dtype=float)
+
+        b = np.array(outputVector, dtype=float) 
+
+        # Test with a new input
+        x = np.array(inputVec, dtype=float)
+        
+        newNewData = copy.deepcopy(dataListMinusOutput)
+        DANOutput = []
+        otherx = x.tolist()
+        for cluster in range(len(newNewData)):
+            sum = 0
+            for element in range(len(newNewData[cluster])):
+                sum += otherx[element] * newNewData[cluster][element]
+            DANOutput.append(sum)
+        for clusterIndex in range(len(newNewData)):
+            for element in range(len(newNewData[clusterIndex])):
+                newNewData[clusterIndex][element] = newNewData[clusterIndex][element] * DANOutput[clusterIndex]
+        finalOutputVector = []
+        for elementIndex in range(len(newNewData[0])):
+            outputHolder = []
+            for newClusterIndex in range(len(newNewData)):
+                outputHolder.append(newNewData[newClusterIndex][elementIndex])
+            maxVal = max(outputHolder)
+            finalOutputVector.append(maxVal)
+        b_original = finalOutputVector
+
+        for index in range(len(b_original)):
+            b_original[index] = b_original[index]/11
+
+        JSANNNetwork = JetsSharksANNCreator(theData=theData,epochs=300)
+
+        JSANNOutput = JetsSharksANNOutput(inputVectorListOfLists=[inputVec], weight1=JSANNNetwork["W1"],weight2=JSANNNetwork["W2"])
+        
+        NetworkDict["Backprop"] = JSANNOutput
+
+        print(NetworkDict)
+        
+        NetworkPlotCreator(NetworkDict, dataset[0][-1])
+        
+
+        # print(dataset[0][-1])
+        # print(unorthogonalizedDANOutput)
+        # print(orthogonalizedDANOutput)
+        # print(randomNetworkListofLists[0], "\n")
+        print(dataset[0][-1])
+        print(NetworkDict)
+
     
-    NetworkPlotCreator(NetworkDict, dataset[0][-1])
-    
 
-    # print(dataset[0][-1])
-    # print(unorthogonalizedDANOutput)
-    # print(orthogonalizedDANOutput)
-    # print(randomNetworkListofLists[0], "\n")
-    print(dataset[0][-1])
-    print(NetworkDict)
+
+
+
+
 
     
 
