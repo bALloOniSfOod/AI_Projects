@@ -32,7 +32,7 @@ def num_to_col_letter(num):
 
 
 class DAN:
-    def __init__(self, type, newWorkbook, excelDAN=True, MAXSUBPython=True, pythonDAN=False, allInputCategories=True, inputFormatting="clustered", orientation="horizontal", originalWorkbook=None, dataSheet=None, 
+    def __init__(self, type="static", newWorkbook="DANWorkbook", excelDAN=True, MAXSUBPython=True, pythonDAN=False, allInputCategories=True, inputFormatting="clustered", orientation="horizontal", originalWorkbook=None, dataSheet=None, 
                  desiredModifications=[[]], categoryNames=True, categoryOrderPreservation=True, numericalAndAlphabeticalPreservation=False, design=True, ListOfLists=None, printStatements=True):
         self.type = type # Include desired DAN type (current supported type is "static")
         self.excelDAN = excelDAN # Make true if DAN in excel workbook is desired (excelDAN and/or pythonDAN must be selected)
@@ -1434,4 +1434,3 @@ class DAN:
             raise ValueError("This method is not applicable to a static DAN, consider adding data to existing excel sheet/ListOfLists and use .make()")
         if self.type == "temporal":
             print("?")
-
