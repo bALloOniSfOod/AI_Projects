@@ -7,244 +7,156 @@
 
 
 import math
-from Dataset import theData as theData1
-from tqdm import tqdm
-from GeneralizedNetworkPlotter import NetworkPlotCreator
 import copy
+import numpy as np
+from tqdm import tqdm
+from scipy.sparse import csr_matrix
 
 
-
-
-def DANBasisUnorthogonalizer(theData, normOutput=True, featureSimilarityAmplificationVectorExponentiation=1, featureSimilarityAmplificationMatrixExponentiation=1, inputVector=None, featureOutputs=True, dataOutputs=False, divideFeatureEntriesByDiagonal=True, returnFeatureMatrix=False):
+def DANBasisUnorthogonalizer(theData, normOutput=True, featureSimilarityAmplificationVectorExponentiation=1, featureSimilarityAmplificationMatrixExponentiation=1, inputVector=None, featureOutputs=True, dataOutputs=False, divideFeatureEntriesByDiagonal=True, returnFeatureMatrix=False, binarySolverBool=False):
 
     print("Unorthogonalizing Basis...")
 
     theData = copy.deepcopy(theData)
 
-    outputBool = False
+    outputBool = isinstance(theData[0][-1], list)
+    if outputBool:
+        DATAoutputHolder = [row[-1] for row in theData]
+        theData = [row[:-1] for row in theData]
 
-    if type(theData[0][-1]) == list:
-        outputBool = True
-        DATAoutputHolder = []
-        for listIndex in range(len(theData)):
-            DATAoutputHolder.append(theData[listIndex][-1])
-            theData[listIndex] = theData[listIndex][:-1]
-
-    featureSimilarityMatrix = []
+    X = np.asarray(theData, dtype=np.float32)
 
     print("Constructing Feature Similarity Matrix (FSM)...")
 
-    maxDiagValue = 0
-    for featureIndex in range(len(theData[0])):
-        diagValue = 0
-        for listIndex in range(len(theData)):
-            if theData[listIndex][featureIndex] == 1:
-                diagValue += 1
-        if diagValue > maxDiagValue:
-            maxDiagValue = diagValue
+    if binarySolverBool:
+        Xs = csr_matrix(X)
+        FSM = (Xs.T @ Xs).toarray()
+    else:
+        FSM = X.T @ X
 
-    featureSimilarityMatrix = []
+    if divideFeatureEntriesByDiagonal:
+        maxDiagValue = np.max(np.diag(FSM))
+        FSM = (FSM / maxDiagValue) ** featureSimilarityAmplificationMatrixExponentiation
+    else:
+        FSM = FSM ** featureSimilarityAmplificationMatrixExponentiation
 
-    for primaryFeatureIndex in tqdm(range(len(theData[0]))):
-        primaryFeatureList = []
-
-        for secondaryFeatureIndex in range(len(theData[0])):
-            featureSimilarityHolder = 0
-
-            for listIndex in range(len(theData)):
-                if (theData[listIndex][primaryFeatureIndex] == theData[listIndex][secondaryFeatureIndex] == 1):
-                    featureSimilarityHolder += 1
-            if divideFeatureEntriesByDiagonal:
-                primaryFeatureList.append((featureSimilarityHolder / maxDiagValue) ** featureSimilarityAmplificationMatrixExponentiation)
-            else:
-                primaryFeatureList.append(featureSimilarityHolder ** featureSimilarityAmplificationMatrixExponentiation)
-
-        featureSimilarityMatrix.append(primaryFeatureList)
-    
     print("Applying Data to FSM...")
 
-    theUnorthogonalizedData = []
+    X_new = (X @ FSM.T) ** featureSimilarityAmplificationVectorExponentiation
 
-    currentData = theData
-    nextData = []
-
-    for listIndex in tqdm(range(len(currentData))):
-        newDataListHolder = []
-        for listFeatureIndex in range(len(currentData[0])):
-            dotProductHolder = 0
-            for iterativeFeatureIndex in range(len(currentData[0])):
-                dotProductHolder += currentData[listIndex][iterativeFeatureIndex] * featureSimilarityMatrix[listFeatureIndex][iterativeFeatureIndex]
-            newDataListHolder.append(dotProductHolder ** featureSimilarityAmplificationVectorExponentiation)  ###################
-        nextData.append(newDataListHolder)
-
-        theUnorthogonalizedData = currentData
-
-    theUnorthogonalizedData = nextData
-    
     if normOutput:
 
         print("Normalizing Output...")
 
-        for listIndex in tqdm(range(len(theUnorthogonalizedData))):
-            normHolder = 0
-            for featureIndex in range(len(theUnorthogonalizedData[0])):
-                normHolder += (theUnorthogonalizedData[listIndex][featureIndex])**2
-            normHolder = normHolder ** 0.5
-            for featureIndex in range(len(theUnorthogonalizedData[0])):
-                theUnorthogonalizedData[listIndex][featureIndex] = theUnorthogonalizedData[listIndex][featureIndex] / normHolder
-    
+        norms = np.linalg.norm(X_new, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0
+        X_new = X_new / norms
+
     if outputBool:
-        for listIndex in range(len(theData)):
-            theUnorthogonalizedData[listIndex].append(DATAoutputHolder[listIndex])
+        X_new = X_new.tolist()
+        for i in range(len(X_new)):
+            X_new[i].append(DATAoutputHolder[i])
+        X_new = np.asarray(X_new, dtype=object)
 
-    if inputVector:
+    if inputVector is None:
+        if returnFeatureMatrix:
 
-        for listIndex in range(len(theUnorthogonalizedData)):
-            theUnorthogonalizedData[listIndex] = theUnorthogonalizedData[listIndex][:-1]
+            print("Returning Unorthogonalized Dataset AND FSM...")
 
-        print("Transforming Input Vector...")
+            return X_new, FSM
+        else:
 
-        newDataListHolder = []
-        for listFeatureIndex in tqdm(range(len(theData[0]))):
-            dotProductHolder = 0
-            for iterativeFeatureIndex in range(len(theData[0])):
-                try:
-                    dotProductHolder += inputVector[iterativeFeatureIndex] * featureSimilarityMatrix[listFeatureIndex][iterativeFeatureIndex]
-                except:
-                    raise ValueError("Mismatch between input vector length and dataset feature length")
-            newDataListHolder.append(dotProductHolder ** featureSimilarityAmplificationVectorExponentiation)  ###################
-        transformedInputVector = newDataListHolder
+            print("Returning Unorthogonalized Dataset...")
 
-        print("Normalizing Input Vector...")
+            return X_new
 
-        normHolder = 0
-        for featureIndex in range(len(theUnorthogonalizedData[0])):
-            normHolder += (transformedInputVector[featureIndex])**2
-        normHolder = math.sqrt(normHolder)
-        for featureIndex in range(len(theUnorthogonalizedData[0])):
-            transformedInputVector[featureIndex] = transformedInputVector[featureIndex] / normHolder
+    print("Transforming Input Vector...")
 
-        UnorthogonalizedDANOutputList = []
+    v = np.asarray(inputVector, dtype=np.float32)
+    if v.shape[0] != FSM.shape[0]:
+        raise ValueError("Mismatch between input vector length and feature count")
 
-        print("Applying Input Vector to Unorthogonalized Data...")
+    v_new = (FSM @ v) ** featureSimilarityAmplificationVectorExponentiation
 
-        for listIndex in range(len(theUnorthogonalizedData)):
-            dotProductHolder = 0
-            for featureIndex in range(len(theUnorthogonalizedData[0])):
-                dotProductHolder += theUnorthogonalizedData[listIndex][featureIndex] * transformedInputVector[featureIndex]
-            UnorthogonalizedDANOutputList.append(dotProductHolder)
+    print("Normalizing Input Vector...")
 
-        if dataOutputs:
+    v_norm = np.linalg.norm(v_new)
+    if v_norm != 0:
+        v_new /= v_norm
 
-            print("Returning Data Similarity...")
+    print("Applying Input Vector to Unorthogonalized Data...")
 
-            return UnorthogonalizedDANOutputList
-        
-        if featureOutputs:
-            finalFeatureOutputList = []
-            
-            for featureIndex in tqdm(range(len(theUnorthogonalizedData[0]))):
-                maxValHolder = 0
-                for listIndex in range(len(theUnorthogonalizedData)):
-                    if theData[listIndex][featureIndex] != 0 and UnorthogonalizedDANOutputList[listIndex] > maxValHolder:
-                        maxValHolder = UnorthogonalizedDANOutputList[listIndex]
-                
-                finalFeatureOutputList.append(maxValHolder)
+    similarity_scores = X_new[:, :-1] @ v_new if outputBool else X_new @ v_new
 
-            print("Returning Feature Similarity...")
+    if dataOutputs:
 
-            return finalFeatureOutputList
-        
-    if not returnFeatureMatrix and inputVector == None:
+        print("Returning Data Similarity...")
 
-        print("Returning Unorthogonalized Dataset...")
+        return similarity_scores.tolist()
 
-        return theUnorthogonalizedData
-    
-    if returnFeatureMatrix and inputVector == None:
+    if featureOutputs:
 
-        print("Returning Unorthogonalized Dataset AND FSM...")
+        print("Returning Feature Similarity...")
 
-        return theUnorthogonalizedData, featureSimilarityMatrix
+        feature_scores = []
+        X_base = np.asarray(theData, dtype=np.float32)
 
+        for f in range(X_base.shape[1]):
+            mask = X_base[:, f] != 0
+            if np.any(mask):
+                feature_scores.append(np.max(similarity_scores[mask]))
+            else:
+                feature_scores.append(0.0)
 
+        return feature_scores
 
 
 def DANInputUnorthogonalizer(inputVector, theData, normalizeInput=True, featureSimilarityAmplificationVectorExponentiation=1, featureSimilarityAmplificationMatrixExponentiation=1, divideFeatureEntriesByDiagonal=True, featureSimilarityMatrix=None):
-    
+
     print("Unorthogonalizing Input Vector...")
 
     theData = copy.deepcopy(theData)
 
-    if type(theData[0][-1]) == list:
-        DATAoutputHolder = []
-        for listIndex in range(len(theData)):
-            DATAoutputHolder.append(theData[listIndex][-1])
-            theData[listIndex] = theData[listIndex][:-1]
+    if isinstance(theData[0][-1], list):
+        theData = [row[:-1] for row in theData]
 
-    print("Constructing Feature Similarity Matrix...")
+    X = np.asarray(theData, dtype=np.float32)
 
-    maxDiagValue = 0
-    for featureIndex in range(len(theData[0])):
-        diagValue = 0
-        for listIndex in range(len(theData)):
-            if theData[listIndex][featureIndex] == 1:
-                diagValue += 1
-        if diagValue > maxDiagValue:
-            maxDiagValue = diagValue
+    if featureSimilarityMatrix is None:
 
-    if featureSimilarityMatrix == None:
+        print("Constructing Feature Similarity Matrix...")
 
-        featureSimilarityMatrix = []
+        FSM = X.T @ X
 
-        for primaryFeatureIndex in tqdm(range(len(theData[0]))):
-            primaryFeatureList = []
+        if divideFeatureEntriesByDiagonal:
+            maxDiagValue = np.max(np.diag(FSM))
+            FSM = (FSM / maxDiagValue) ** featureSimilarityAmplificationMatrixExponentiation
+        else:
+            FSM = FSM ** featureSimilarityAmplificationMatrixExponentiation
+    else:
+        FSM = np.asarray(featureSimilarityMatrix, dtype=np.float32)
 
-            for secondaryFeatureIndex in range(len(theData[0])):
-                featureSimilarityHolder = 0
+    v = np.asarray(inputVector, dtype=np.float32)
+    if v.shape[0] != FSM.shape[0]:
+        raise ValueError("Mismatch between input vector length and feature count")
 
-                for listIndex in range(len(theData)):
-                    if (theData[listIndex][primaryFeatureIndex] == theData[listIndex][secondaryFeatureIndex] == 1):
-                        featureSimilarityHolder += 1
-                if divideFeatureEntriesByDiagonal:
-                    primaryFeatureList.append((featureSimilarityHolder / maxDiagValue) ** featureSimilarityAmplificationMatrixExponentiation)
-                else:
-                    primaryFeatureList.append(featureSimilarityHolder ** featureSimilarityAmplificationMatrixExponentiation)
-
-            featureSimilarityMatrix.append(primaryFeatureList)
-
-    newInputVector = []
-
-    print("Applying Input Vector to Unorthogonalized Data...")
-
-    for listFeatureIndex in tqdm(range(len(theData[0]))):
-        dotProductHolder = 0
-        for iterativeFeatureIndex in range(len(theData[0])):
-            try:
-                dotProductHolder += inputVector[iterativeFeatureIndex] * featureSimilarityMatrix[listFeatureIndex][iterativeFeatureIndex]
-            except:
-                raise ValueError("Mismatch between input vector length and dataset feature length")
-        newInputVector.append(dotProductHolder ** featureSimilarityAmplificationVectorExponentiation)
-
-
+    v_new = (FSM @ v) ** featureSimilarityAmplificationVectorExponentiation
 
     if normalizeInput:
 
         print("Normalizing Output...")
 
-        normHolder = 0
-        for featureIndex in range(len(newInputVector)):
-            normHolder += (newInputVector[featureIndex])**2
-        normHolder = normHolder ** 0.5
-        for featureIndex in range(len(newInputVector)):
-            newInputVector[featureIndex] = newInputVector[featureIndex] / normHolder
+        norm = np.linalg.norm(v_new)
+        if norm != 0:
+            v_new /= norm
 
     print("Returning Transformed Vector...")
 
-    return newInputVector
+    return v_new.tolist()
 
 
 if __name__ == "__main__":
+    from Dataset import theData as theData1
 
     inputVec = DANInputUnorthogonalizer(theData1[0][:-1], theData=theData1)
     output = DANBasisUnorthogonalizer(theData1, featureSimilarityAmplificationMatrixExponentiation=1, inputVector=theData1[0][:-1], featureOutputs=False, dataOutputs=True)
