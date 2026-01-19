@@ -6,11 +6,13 @@
 # This code constructs a DENN. More information about these networks can be found in About_This_File.txt. It takes as input a dataset and 
 # constructs a DENN. 
 
+
 import numpy as np
 from tqdm import tqdm
 import math
 from Dataset import theData as theData
 from Dataset import categoryDict
+from Dataset import theLabeledData
 from JetsSharksDataHolder import theAutoEncoderData
 import ANNMatrices
 import copy
@@ -19,7 +21,9 @@ from scipy.sparse.linalg import gmres
 from DANBasisUnorthogonalizer import DANBasisUnorthogonalizer, DANInputUnorthogonalizer
 from GeneralizedNetworkPlotter import NetworkPlotCreator
 import random as rn
-from JetsSharksANN import JetsSharksANNCreator, JetsSharksANNOutput
+from JetsSharksANN import DataANNCreator, DataANNOutput
+from DanClass import DAN
+import tensorflow
 
 
 
@@ -111,12 +115,12 @@ def NNEquationSolver(DataMemberList, trainingData=None, function="exponential", 
     for inputDataCluster in tqdm(trainingData if trainingData is not None else firstLayerMatrix):
         finalEquation = []
         for iterativeDataCluster in firstLayerMatrix:
-            dotProductSum = sum(inputDataCluster[i] * iterativeDataCluster[i] for i in range(len(inputDataCluster)))
+            dotProductSum = sum(inputDataCluster[i] * iterativeDataCluster[i] for i in range(len(iterativeDataCluster)))
 
             if function == "":
                 finalEquation.append(dotProductSum)
             elif function == "exponential":
-                finalEquation.append(100 ** (dotProductSum/len(categoryDict)) if dotProductSum > 0 else -100 **(dotProductSum/len(categoryDict)))
+                finalEquation.append(10 ** (dotProductSum/len(iterativeDataCluster)) if dotProductSum > 0 else -10 **(dotProductSum/len(iterativeDataCluster)))
             elif function == "sigmoid":
                 finalEquation.append(1 / (1 + math.exp(-dotProductSum/len(inputDataCluster))))
             elif function == "tanh":
@@ -158,7 +162,7 @@ def NNEquationSolver(DataMemberList, trainingData=None, function="exponential", 
         if leastSquareSolutionNorm:
             Solutions = np.linalg.lstsq(numpyCoefficientMatrix, numpyOutputVector, rcond=None)
         elif fastBinaryEquationSolver:
-            Solutions = gmres(numpyCoefficientMatrix, numpyOutputVector, restart=500)
+            Solutions = gmres(numpyCoefficientMatrix, numpyOutputVector, restart=50)
         elif ridgeRegression:
             n = numpyCoefficientMatrix.shape[1]
             Solutions = [np.linalg.solve(numpyCoefficientMatrix.T @ numpyCoefficientMatrix + lambdaVar * np.eye(n), numpyCoefficientMatrix.T @ numpyOutputVector)]
@@ -192,7 +196,7 @@ class DANtoANNNeuralNetGenerator:
     ### Initialize Neural Network ###
     #################################
 
-    def __init__(self, DataMemberList, trainingData=None, firstLayer=[], secondLayerDict={}, function="", compressToANN=True, leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=0, conditionNumber=False, normalizeOutputs=True, maxAlignment=True, linearCompression=True, nonLinearCompression=False, fastBinaryEquationSolver=False):
+    def __init__(self, DataMemberList, trainingData=None, firstLayer=[], secondLayerDict={}, function="", compressToANN=False, leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=0, conditionNumber=False, normalizeOutputs=True, maxAlignment=True, linearCompression=True, nonLinearCompression=False, fastBinaryEquationSolver=False):
         if firstLayer and secondLayerDict:
             self.firstLayerMatrix = firstLayer
             self.secondLayerMatrix = secondLayerDict
@@ -282,7 +286,7 @@ class DANtoANNNeuralNetwork:
             if self.function == "":
                 firstLayerOutput.append(dotProductSum)
             elif self.function == "exponential":
-                firstLayerOutput.append(100 ** (dotProductSum/len(categoryDict)) if dotProductSum > 0 else -100 **(dotProductSum/len(categoryDict)))
+                firstLayerOutput.append(10 ** (dotProductSum/len(iterativeDataCluster)) if dotProductSum > 0 else -10 **(dotProductSum/len(iterativeDataCluster)))
             elif self.function == "sigmoid":
                 val = 1 / (1 + math.exp(-(dotProductSum/len(inputDataCluster))))
                 firstLayerOutput.append(val)
@@ -319,62 +323,93 @@ class DANtoANNNeuralNetwork:
 if __name__ == "__main__":
 
 
-    dataset1 = DANBasisUnorthogonalizer(theData, True, featureSimilarityAmplificationMatrixExponentiation=0.3)
+    dataset1 = DANBasisUnorthogonalizer(theData, True, featureSimilarityAmplificationMatrixExponentiation=2)
     dataset = theData
     datasetMinusOutput = copy.deepcopy(theData)
     for index in range(len(datasetMinusOutput)):
         datasetMinusOutput[index] = datasetMinusOutput[index][:-1]
 
 
-    DANNeuralNetHolder = DANtoANNNeuralNetGenerator(dataset, conditionNumber=True, compressToANN=False, function="exponential", leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=0.00001, normalizeOutputs=False, linearCompression=True, nonLinearCompression=False, fastBinaryEquationSolver=False)
+    DANNeuralNetHolder = DANtoANNNeuralNetGenerator(dataset, conditionNumber=True, compressToANN=False, function="", leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=0.00001, normalizeOutputs=False, linearCompression=True, nonLinearCompression=False, fastBinaryEquationSolver=False)
     DANNeuralNet = DANtoANNNeuralNetwork(DANNeuralNetHolder, exportWeightMatrices=False)
 
-    DANNeuralNetHolder1 = DANtoANNNeuralNetGenerator(dataset1, conditionNumber=True, compressToANN=False, function="exponential", leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=0.00001, normalizeOutputs=False, linearCompression=True, nonLinearCompression=False, fastBinaryEquationSolver=False)
+    DANNeuralNetHolder1 = DANtoANNNeuralNetGenerator(dataset1, conditionNumber=True, compressToANN=False, function="", leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=0.00001, normalizeOutputs=False, linearCompression=True, nonLinearCompression=False, fastBinaryEquationSolver=False)
     DANNeuralNet1 = DANtoANNNeuralNetwork(DANNeuralNetHolder1, exportWeightMatrices=False)
 
-    # for data in theData[99:100]:
-    #     print("Predicted: ", DANNeuralNet.getOutput(data[:-1], printWeights=True), "\n", "Expected: ", data[-1], "\n")
 
-    def random_binary_lists(num_lists, list_length, ones_per_list=6):
-        result = []
+    def randomJetsSharksInputList(partialActivation=True):
 
-        for _ in range(num_lists):
-            lst = [0] * list_length
-            ones_indices = rn.sample(range(list_length), ones_per_list)
-            for i in ones_indices:
-                lst[i] = 1
-            result.append(lst)
+        nameList = [0] * 27
+        nameList[rn.randrange(27)] = 1
+        teamList = [0] * 2
+        teamList[rn.randrange(2)] = 1
+        ageList = [0] * 3
+        ageList[rn.randrange(3)] = 1
+        schoolList = [0] * 3
+        schoolList[rn.randrange(3)] = 1
+        marriedList = [0] * 3
+        marriedList[rn.randrange(3)] = 1
+        occList = [0] * 3
+        occList[rn.randrange(3)] = 1
 
-        return result
-    
-    inputVecList = random_binary_lists(50, 41, 6)
+        finalList = [nameList, teamList, ageList, schoolList, marriedList, occList]
+
+        if partialActivation:
+            randNum = rn.randrange(6)
+            for index in range(len(finalList[randNum])):
+                finalList[randNum][index] = 0
+
+        returnList = []
+
+        for index1 in range(len(finalList)):
+            for index2 in range(len(finalList[index1])):
+                returnList.append(finalList[index1][index2])
+
+        return returnList
+
+
+    inputVecList = []
+    for i in range(100):
+        inputVecList.append(randomJetsSharksInputList())
+
+
+    theLabeledData.insert(0, categoryDict)
+
+
+    newDAN = DAN(type="static", excelDAN=False, pythonDAN=True, MAXSUBPython=False, ListOfLists=theLabeledData)
+    newDAN.make()
+
+
+    def customActivation(x):
+     
+        x_div = x / 6
+        return tensorflow.where(x > 0, 10.0 ** x_div, -10.0 ** x_div)
+
+    JSANNOutput = DataANNCreator(theData, epochs=150, activationFunction='relu')
 
     for inputVec in inputVecList:
-        inputVec = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 1, 0, 0]
         # inputVec = dataset[0][:-1]
-        inputVec1 = DANInputUnorthogonalizer(inputVec, theData, featureSimilarityAmplificationMatrixExponentiation=0.3)
+        inputVec1 = DANInputUnorthogonalizer(inputVec, theData, featureSimilarityAmplificationMatrixExponentiation=2)
     
         orthogonalizedDANOutput = DANNeuralNet.getOutput(inputVec)
         unorthogonalizedDANOutput = DANNeuralNet1.getOutput(inputVec1)
 
 
-        NetworkDict = {"Orthogonal Nonrandom": [orthogonalizedDANOutput], "Unorthogonal Nonrandom": [unorthogonalizedDANOutput]}
+        NetworkDict = {"DAN": [orthogonalizedDANOutput], "uDENN": [unorthogonalizedDANOutput]}
 
         randomNetworkListofLists = []
         rows = 27
         cols = 41
-        # rows = 544
-        # cols = 416
         for i in range(5):
             matrix = [[rn.random() for j in range(cols)] for i in range(rows)]
             for j in range(len(matrix)):
                 matrix[j].append(theData[j][-1])
-            DANNeuralNetHolder2 = DANtoANNNeuralNetGenerator(matrix, trainingData=datasetMinusOutput, conditionNumber=True, compressToANN=False, function="exponential", leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=1, normalizeOutputs=False, linearCompression=True, nonLinearCompression=False, fastBinaryEquationSolver=False)
+            DANNeuralNetHolder2 = DANtoANNNeuralNetGenerator(matrix, trainingData=datasetMinusOutput, conditionNumber=True, compressToANN=False, function="", leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=1, normalizeOutputs=False, linearCompression=True, nonLinearCompression=False, fastBinaryEquationSolver=False)
             DANNeuralNet2 = DANtoANNNeuralNetwork(DANNeuralNetHolder2, exportWeightMatrices=False)
             unorthogDANOutput = DANNeuralNet2.getOutput(inputVec)
             randomNetworkListofLists.append(unorthogDANOutput)
 
-        NetworkDict["Unorthogonal Random"] = randomNetworkListofLists
+        NetworkDict["Random"] = randomNetworkListofLists
 
         dataListMinusOutput = []
         outputVector = []
@@ -388,17 +423,16 @@ if __name__ == "__main__":
 
         b = np.array(outputVector, dtype=float) 
 
-        # Test with a new input
         x = np.array(inputVec, dtype=float)
         
         newNewData = copy.deepcopy(dataListMinusOutput)
         DANOutput = []
         otherx = x.tolist()
         for cluster in range(len(newNewData)):
-            sum = 0
+            dot = 0
             for element in range(len(newNewData[cluster])):
-                sum += otherx[element] * newNewData[cluster][element]
-            DANOutput.append(sum)
+                dot += otherx[element] * newNewData[cluster][element]
+            DANOutput.append(dot)
         for clusterIndex in range(len(newNewData)):
             for element in range(len(newNewData[clusterIndex])):
                 newNewData[clusterIndex][element] = newNewData[clusterIndex][element] * DANOutput[clusterIndex]
@@ -412,36 +446,50 @@ if __name__ == "__main__":
         b_original = finalOutputVector
 
         for index in range(len(b_original)):
-            b_original[index] = b_original[index]/11
+            b_original[index] = b_original[index]/6
 
-        JSANNNetwork = JetsSharksANNCreator(theData=theData,epochs=300)
+        # b_original = newDAN.getMaxValues()
 
-        JSANNOutput = JetsSharksANNOutput(inputVectorListOfLists=[inputVec], weight1=JSANNNetwork["W1"],weight2=JSANNNetwork["W2"])
-        
-        NetworkDict["Backprop"] = JSANNOutput
+        NetworkDict["Expected"] = [b_original]
 
-        print(NetworkDict)
+        DENNOutput = DANBasisUnorthogonalizer(theData, True, featureSimilarityAmplificationMatrixExponentiation=1, inputVector=inputVec)
+
+        NetworkDict["DENN"] = [DENNOutput]
+
+        theJSANNOutput = DataANNOutput([inputVec], JSANNOutput["W1"], JSANNOutput["W2"], activation='relu')
+
+        # paramDict, trajects = JetsSharksANNCreator(theData=theData, epochs=500, returnOutputTrajectories=True, inputVector=inputVec)
+        print(theJSANNOutput)
+        NetworkDict["Backprop"] = theJSANNOutput
         
-        NetworkPlotCreator(NetworkDict, dataset[0][-1])
+        NetworkPlotCreator(NetworkDict, b_original)
         
+        # trajects = JetsSharksANNCreator(
+        # theData=theData,
+        # epochs=500,
+        # returnOutputTrajectories=True,
+        # inputVector=inputVec
+        # )
+
+        # otherNetworkDict = {"backprop": trajects}
+
+        # NetworkPlotCreator(otherNetworkDict, unorthogDANOutput)
+
+        # for i in range(len(JSANNOutput)):
+        #     print(math.sqrt((unorthogDANOutput[i] - JSANNOutput[0][i]) ** 2))
 
         # print(dataset[0][-1])
         # print(unorthogonalizedDANOutput)
         # print(orthogonalizedDANOutput)
         # print(randomNetworkListofLists[0], "\n")
-        print(dataset[0][-1])
-        print(NetworkDict)
+        # print(dataset[0][-1])
+        # print(NetworkDict)
 
-    
+        # paramDict, trajects = JetsSharksANNCreator(theData=theData, epochs=500, returnOutputTrajectories=True, inputVector=inputVec)
 
+        # NetworkDict["Backprop"] = trajects
 
-
-
-
-
-    
-
-
+        # NetworkPlotCreator(NetworkDict, b_original, plotType="scatter plot trajectory")
 
 
 
@@ -452,6 +500,4 @@ if __name__ == "__main__":
     
 
 
-
-    
     
