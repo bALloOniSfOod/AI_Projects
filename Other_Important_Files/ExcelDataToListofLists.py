@@ -80,10 +80,44 @@ def ExcelDataToListofLists(originalWorkbook, dataSheet, ListOfListBool=True, Cat
 
 
 
-def ListofListsToBinaryEncodingListOfLists(ListOfLists, desiredOutputColumnList, includeOutputsInInputs=False, printBinaryDataset=False, binaryFinalOutputs = False):
+def ListofListsToBinaryEncodingListOfLists(ListOfLists, desiredOutputColumnList=None, includeOutputsInInputs=False, printBinaryDataset=False, binaryFinalOutputs=False, desiredModifications=[[]]):
     newBinaryEncodingListOfLists = []
     finalBinaryEncodingList = []
     finalCategoryElementList = []
+
+    ListOfLists = copy.deepcopy(ListOfLists)
+
+    print("Modifying Data...")
+
+    if desiredModifications and desiredModifications[0]:
+        for mod in desiredModifications:
+            columnNum = mod[0] 
+            action = mod[1]
+            specificity = mod[2]
+
+            if action == "round":
+                for row in ListOfLists:
+                    if row[columnNum] is not None:
+                        row[columnNum] = round(row[columnNum], specificity)
+
+            elif action == "splice":
+                col_vals = [row[columnNum] for row in ListOfLists if row[columnNum] is not None]
+
+                minVal = min(col_vals)
+                maxVal = max(col_vals)
+
+                spliceRange = (maxVal - minVal) / specificity
+                spliceBins = [minVal + i * spliceRange for i in range(specificity + 1)]
+
+                for row in ListOfLists:
+                    val = row[columnNum]
+                    for i in range(len(spliceBins) - 1):
+                        if spliceBins[i] <= val <= spliceBins[i + 1]:
+                            row[columnNum] = spliceBins[i + 1]
+                            break
+
+            else:
+                raise ValueError(f"Unknown modification action: {action}")
 
     print("Constructing Binary Bins...")
 
