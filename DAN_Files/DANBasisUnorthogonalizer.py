@@ -13,9 +13,9 @@ from tqdm import tqdm
 from scipy.sparse import csr_matrix
 
 
-def DANBasisUnorthogonalizer(theData, normOutput=True, featureSimilarityAmplificationVectorExponentiation=1, featureSimilarityAmplificationMatrixExponentiation=1, inputVector=None, featureOutputs=True, dataOutputs=False, divideFeatureEntriesByDiagonal=True, returnFeatureMatrix=False, binarySolverBool=False):
+def DANBasisUnorthogonalizer(theData, featureSimilarityAmplificationVectorExponentiation=1, featureSimilarityAmplificationMatrixExponentiation=1, inputVector=None, featureOutputs=True, dataOutputs=False, divideFeatureEntriesByDiagonal=True, returnFeatureMatrix=False, binarySolverBool=False):
 
-    print("Unorthogonalizing Basis...")
+    print("Preparing Data...")
 
     theData = copy.deepcopy(theData)
 
@@ -24,7 +24,7 @@ def DANBasisUnorthogonalizer(theData, normOutput=True, featureSimilarityAmplific
         DATAoutputHolder = [row[-1] for row in theData]
         theData = [row[:-1] for row in theData]
 
-    X = np.asarray(theData, dtype=np.float32)
+    X = np.asarray(theData, dtype=np.float64)
 
     print("Constructing Feature Similarity Matrix (FSM)...")
 
@@ -36,23 +36,17 @@ def DANBasisUnorthogonalizer(theData, normOutput=True, featureSimilarityAmplific
 
     if divideFeatureEntriesByDiagonal:
         maxDiagValue = np.max(np.diag(FSM))
-        FSM = (FSM / maxDiagValue) ** featureSimilarityAmplificationMatrixExponentiation
-    else:
-        FSM = FSM ** featureSimilarityAmplificationMatrixExponentiation
+        FSM = FSM / maxDiagValue
 
-    print("Applying Data to FSM...")
+    FSM = FSM ** featureSimilarityAmplificationMatrixExponentiation
+
+    print("Applying FSM to Data and Norming Result...")
 
     X_new = (X @ FSM.T) ** featureSimilarityAmplificationVectorExponentiation
-
-    if normOutput:
-
-        print("Normalizing Output...")
-
-        norms = np.linalg.norm(X_new, axis=1, keepdims=True)
-        norms[norms == 0] = 1.0
-        X_new = X_new / norms
+    X_new = X_new / np.linalg.norm(X_new, axis=1, keepdims=True)
 
     if outputBool:
+        print("Reattaching Original Outputs to Data...")
         X_new = X_new.tolist()
         for i in range(len(X_new)):
             X_new[i].append(DATAoutputHolder[i])
@@ -60,55 +54,48 @@ def DANBasisUnorthogonalizer(theData, normOutput=True, featureSimilarityAmplific
 
     if inputVector is None:
         if returnFeatureMatrix:
-
-            print("Returning Unorthogonalized Dataset AND FSM...")
-
+            print("Returning Output and FSM...")
             return X_new, FSM
         else:
-
-            print("Returning Unorthogonalized Dataset...")
-
+            print("Returning Output...")
             return X_new
 
     print("Transforming Input Vector...")
 
-    v = np.asarray(inputVector, dtype=np.float32)
+    v = np.asarray(inputVector, dtype=np.float64)
     if v.shape[0] != FSM.shape[0]:
         raise ValueError("Mismatch between input vector length and feature count")
 
     v_new = (FSM @ v) ** featureSimilarityAmplificationVectorExponentiation
-
-    print("Normalizing Input Vector...")
-
     v_norm = np.linalg.norm(v_new)
     if v_norm != 0:
         v_new /= v_norm
 
     print("Applying Input Vector to Unorthogonalized Data...")
 
-    similarity_scores = X_new[:, :-1] @ v_new if outputBool else X_new @ v_new
+    X_dot = np.asarray(X_new[:, :-1], dtype=np.float64) if outputBool else X_new
+    X_dot = X_dot / np.linalg.norm(X_dot, axis=1, keepdims=True)
+
+    similarity_scores = X_dot @ v_new
 
     if dataOutputs:
-
-        print("Returning Data Similarity...")
-
+        print("Returning Data Outputs...")
         return similarity_scores.tolist()
 
     if featureOutputs:
-
-        print("Returning Feature Similarity...")
-
+        print("Returning Feature Outputs...")
         feature_scores = []
-        X_base = np.asarray(theData, dtype=np.float32)
-
+        X_base = np.asarray(theData, dtype=np.float64)
         for f in range(X_base.shape[1]):
             mask = X_base[:, f] != 0
             if np.any(mask):
                 feature_scores.append(np.max(similarity_scores[mask]))
             else:
                 feature_scores.append(0.0)
-
         return feature_scores
+
+
+
 
 
 def DANInputUnorthogonalizer(inputVector, theData, normalizeInput=True, featureSimilarityAmplificationVectorExponentiation=1, featureSimilarityAmplificationMatrixExponentiation=1, divideFeatureEntriesByDiagonal=True, featureSimilarityMatrix=None):
@@ -120,7 +107,7 @@ def DANInputUnorthogonalizer(inputVector, theData, normalizeInput=True, featureS
     if isinstance(theData[0][-1], list):
         theData = [row[:-1] for row in theData]
 
-    X = np.asarray(theData, dtype=np.float32)
+    X = np.asarray(theData, dtype=np.float64)
 
     if featureSimilarityMatrix is None:
 
@@ -134,9 +121,9 @@ def DANInputUnorthogonalizer(inputVector, theData, normalizeInput=True, featureS
         else:
             FSM = FSM ** featureSimilarityAmplificationMatrixExponentiation
     else:
-        FSM = np.asarray(featureSimilarityMatrix, dtype=np.float32)
+        FSM = np.asarray(featureSimilarityMatrix, dtype=np.float64)
 
-    v = np.asarray(inputVector, dtype=np.float32)
+    v = np.asarray(inputVector, dtype=np.float64)
     if v.shape[0] != FSM.shape[0]:
         raise ValueError("Mismatch between input vector length and feature count")
 
@@ -156,13 +143,13 @@ def DANInputUnorthogonalizer(inputVector, theData, normalizeInput=True, featureS
 
 
 if __name__ == "__main__":
+
     from Dataset import theData as theData1
 
-    inputVec = DANInputUnorthogonalizer(theData1[0][:-1], theData=theData1)
-    output = DANBasisUnorthogonalizer(theData1, featureSimilarityAmplificationMatrixExponentiation=1, inputVector=theData1[0][:-1], featureOutputs=False, dataOutputs=True)
-    print(output[0])
-
-
+    inputVec = DANInputUnorthogonalizer(theData1[0][:-1], theData=theData1, featureSimilarityAmplificationMatrixExponentiation=4)
+    inputVec = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 1, 0, 0]
+    output = DANBasisUnorthogonalizer(theData1, featureSimilarityAmplificationMatrixExponentiation=4, inputVector=inputVec, featureOutputs=True, dataOutputs=False)
+    print(output)
 
 
 
