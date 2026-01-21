@@ -277,7 +277,6 @@ class DANtoANNNeuralNetwork:
         if printWeights:
             print("Printing Weights...")
             print(secondLayer)
-            print("Weights Printed!")
         for iterativeDataCluster in firstLayer:
             dotProductSum = 0
             for index in range(len(inputDataCluster)):
@@ -322,18 +321,17 @@ class DANtoANNNeuralNetwork:
 
 if __name__ == "__main__":
 
-
-    dataset1 = DANBasisUnorthogonalizer(theData, True, featureSimilarityAmplificationMatrixExponentiation=2)
+    dataset1 = DANBasisUnorthogonalizer(theData, featureSimilarityAmplificationMatrixExponentiation=2)
     dataset = theData
     datasetMinusOutput = copy.deepcopy(theData)
     for index in range(len(datasetMinusOutput)):
         datasetMinusOutput[index] = datasetMinusOutput[index][:-1]
 
 
-    DANNeuralNetHolder = DANtoANNNeuralNetGenerator(dataset, conditionNumber=True, compressToANN=False, function="", leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=0.00001, normalizeOutputs=False, linearCompression=True, nonLinearCompression=False, fastBinaryEquationSolver=False)
+    DANNeuralNetHolder = DANtoANNNeuralNetGenerator(dataset, conditionNumber=True, compressToANN=False, function="exponential", leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=0.00001, normalizeOutputs=False, linearCompression=True, nonLinearCompression=False, fastBinaryEquationSolver=False)
     DANNeuralNet = DANtoANNNeuralNetwork(DANNeuralNetHolder, exportWeightMatrices=False)
 
-    DANNeuralNetHolder1 = DANtoANNNeuralNetGenerator(dataset1, conditionNumber=True, compressToANN=False, function="", leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=0.00001, normalizeOutputs=False, linearCompression=True, nonLinearCompression=False, fastBinaryEquationSolver=False)
+    DANNeuralNetHolder1 = DANtoANNNeuralNetGenerator(dataset1, conditionNumber=True, compressToANN=False, function="exponential", leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=0.00001, normalizeOutputs=False, linearCompression=True, nonLinearCompression=False, fastBinaryEquationSolver=False)
     DANNeuralNet1 = DANtoANNNeuralNetwork(DANNeuralNetHolder1, exportWeightMatrices=False)
 
 
@@ -381,8 +379,7 @@ if __name__ == "__main__":
 
 
     def customActivation(x):
-     
-        x_div = x / 6
+        x_div = x / 6 
         return tensorflow.where(x > 0, 10.0 ** x_div, -10.0 ** x_div)
 
     JSANNOutput = DataANNCreator(theData, epochs=150, activationFunction='relu')
@@ -452,9 +449,11 @@ if __name__ == "__main__":
 
         NetworkDict["Expected"] = [b_original]
 
-        DENNOutput = DANBasisUnorthogonalizer(theData, True, featureSimilarityAmplificationMatrixExponentiation=1, inputVector=inputVec)
+        # DENNOutput = DANBasisUnorthogonalizer(theData, True, featureSimilarityAmplificationMatrixExponentiation=1, inputVector=inputVec)
 
-        NetworkDict["DENN"] = [DENNOutput]
+        # NetworkDict["DENN"] = [DENNOutput]
+
+        # print(DENNOutput)
 
         theJSANNOutput = DataANNOutput([inputVec], JSANNOutput["W1"], JSANNOutput["W2"], activation='relu')
 
@@ -494,6 +493,12 @@ if __name__ == "__main__":
 
 
     
+
+    
+
+    
+
+
 
     
 
