@@ -9,20 +9,8 @@ from tensorflow.keras import layers, models
 import numpy as np
 
 
-def customActivation(x):
 
-    if not isinstance(x, (tensorflow.Tensor, tensorflow.Variable)):
-        x = tensorflow.convert_to_tensor(x, dtype=tensorflow.float32)
-
-    x_div = x / 15.0
-    positive = tensorflow.pow(10.0, x_div)
-    negative = -tensorflow.pow(10.0, x_div)
-
-    return tensorflow.where(x > 0, positive, negative)
-
-
-
-def DataANNCreator( theData, activationFunction='tanh', epochs=500, useBias=False, returnOutputTrajectories=False, inputVector=None):
+def DataANNCreator(theData, activationFunction='tanh', epochs=500, useBias=False, returnOutputTrajectories=False, inputVector=None):
 
     output_trajectory = []
 
@@ -132,6 +120,8 @@ def DataANNOutput(inputVectorListOfLists, weight1, weight2, bias1=None, bias2=No
 
 # with open("/Users/bALloOniSfOod/Desktop/Achievements/AI-Chess-Project/JetsSharksANNOutput.py", "w") as f:
 #         variable_name = "JSANNOutput"
+#         f.write(f"{variable_name} = {outputHolder}\n")
+        
 #         f.write(f"{variable_name} = {outputHolder}\n")
         
         
