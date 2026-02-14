@@ -1,4 +1,12 @@
+# Written by Ryan Cerauli for the DAN Research Program headed by Anthony F. Beavers @ Indiana University. Copyright 2024. 
+# See https://www.afbeavers.net/drg for more information
 
+# This file preliminarily constructs a Tensor-Evolved Kernal Network (TEKN), which is a network that
+# is grown via features, relationships between features, relationships between relationships of features,
+# etc. for an arbitrary depth of the network (all the while pruning low-similarity nodes). An input is then 
+# expanded via a similarity tensor and applied to the remaining nodes of a given layer, before that output is 
+# similarily tensor-expanded and the process repeats, before finally undergoing a KRR-like operation to find the 
+# final weights to fit a specific output. (KRR not implemented yet)
 
 
 
