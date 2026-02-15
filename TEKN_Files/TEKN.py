@@ -222,8 +222,7 @@ class TensorEvolvedKernelNetwork:
 
 
         print("Solving final system of equations...")
-
-        print("Hidden layer 2 hash:", hash(np.array(hiddenLayer2).tobytes()))
+        
 
         self.SolutionsDict = {}
         self.FeatureKeyOrder = sortedKeys 
