@@ -10,143 +10,315 @@
 
 
 
+import os
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
 import numpy as np
 from DANBasisUnorthogonalizer import DANBasisUnorthogonalizer
 import copy
 import tqdm
 from tqdm import tqdm
-from JetsSharksDataHolder import jetsSharksMinusOutput
+from JetsSharksDataHolder import theData
+import random as rn
+
 
 #### Hebbian-style kernal comparison ####
 
+
 def neuronInspiredKernel(element1, element2, gammaParam=1):
+
     return (element1 * element2) / (np.abs(element1 - element2) + gammaParam)
 
 
-#### Construct the layers ####
-
-def dataTransformationEvolver(originalBinaryDataset, numOfLayers=3, divideLayer2ByDiagonal=True, kernelFunction=neuronInspiredKernel, gammaParam=1, transformationScalingFactor=1, maxEntries=1e8, pruneParam=0.1):
+#### Tensor-Evolved Kernel Network constructor ####
 
 
-    hiddenLayer1ListOfLists = originalBinaryDataset
-    hiddenLayer1ListOfListsCopy = copy.deepcopy(hiddenLayer1ListOfLists)
-
-    finalNetworkDict = {}
-
-    finalNetworkDict["1"] = hiddenLayer1ListOfLists
-
-    if not divideLayer2ByDiagonal:
-        hiddenLayer2 = DANBasisUnorthogonalizer(hiddenLayer1ListOfListsCopy, FSMMatrixExp=transformationScalingFactor, divideFeatureEntriesByDiagonal=False, returnOriginalFeatureMatrix=True, normalizeOutput=False)[1]
-    else:
-        hiddenLayer2 = DANBasisUnorthogonalizer(hiddenLayer1ListOfListsCopy, FSMMatrixExp=transformationScalingFactor, divideFeatureEntriesByDiagonal=True, returnModifiedFeatureMatrix=True, normalizeOutput=False)[1]
-
-    layer2Dict = {}
-
-    for rowIndexSlow in range(len(hiddenLayer2)):
-        
-        for columnIndexSlow in range(len(hiddenLayer2[0])):
-
-            if hiddenLayer2[rowIndexSlow][columnIndexSlow] >= pruneParam:
-
-                layer2Dict[f"{rowIndexSlow}x{columnIndexSlow}"] = hiddenLayer2[rowIndexSlow][columnIndexSlow]
-
-    finalNetworkDict["2"] = layer2Dict
+class TensorEvolvedKernelNetwork:
     
-    previousLayerDict = layer2Dict
+    def __init__(self, originalBinaryDataset, numOfLayers=3, divideLayer2ByDiagonal=True, DANFirstLayerBool=True, kernelFunction=neuronInspiredKernel, transformationScalingFactor=1, pruneParam=0.1, leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=0.0001):
 
-    for layerIndex in tqdm(range(numOfLayers - 2)):
+        originalBinaryDataset = copy.deepcopy(originalBinaryDataset)
 
-        newLayerDict = {}
-
-        for previousLayerKeySlow, previousLayerValueSlow in previousLayerDict.items():
-
-            for previousLayerKeyFast, previousLayerValueFast in previousLayerDict.items():
-
-                if kernelFunction(previousLayerValueSlow, previousLayerValueFast) >= pruneParam:
-
-                    newLayerDict[f"{previousLayerKeySlow}x{previousLayerKeyFast}"] = kernelFunction(previousLayerValueSlow, previousLayerValueFast)
-        
-        finalNetworkDict[f"{layerIndex + 3}"] = newLayerDict
-
-        previousLayerDict = newLayerDict
-
-    return finalNetworkDict
+        self.originalBinaryDataset = originalBinaryDataset
+        self.numOfLayers = numOfLayers
+        self.divideLayer2ByDiagonal = divideLayer2ByDiagonal
+        self.DANFirstLayerBool = DANFirstLayerBool
+        self.kernelFunction = kernelFunction
+        self.transformationScalingFactor = transformationScalingFactor
+        self.pruneParam = pruneParam
+        self.leastSquareSolutionNorm = leastSquareSolutionNorm
+        self.ridgeRegression = ridgeRegression
+        self.lambdaVar = lambdaVar
 
 
+        outputDict = {}
 
 
+        print("Constructing output dictionary...")
 
 
-def DIGNNEquationSolver(listOfNetworkListAndDicts, outputDict, DANFirstLayerBool=True, kernelFunction=neuronInspiredKernel):
+        for columnIndex in range(len(originalBinaryDataset[0][-1])):
+
+            outputVectorDictHolder = []
+
+            for dataCluster in range(len(originalBinaryDataset)):
+
+                outputVectorDictHolder.append(originalBinaryDataset[dataCluster][-1][columnIndex])
+
+            outputDict[f"Output {columnIndex + 1}: "] = outputVectorDictHolder
+
+        for rowIndex in range(len(originalBinaryDataset)):
+
+            originalBinaryDataset[rowIndex] = originalBinaryDataset[rowIndex][:-1]
+
+
+        print("Initializing layer 1...")    
+
+
+        hiddenLayer1ListOfLists = originalBinaryDataset
+        hiddenLayer1ListOfListsCopy = copy.deepcopy(hiddenLayer1ListOfLists)
+
+
+        print("Initializing layer 2...")
+
+
+        finalNetworkDict = {}
+
+        finalNetworkDict["1"] = hiddenLayer1ListOfLists
+
+        if not divideLayer2ByDiagonal:
+            hiddenLayer2 = DANBasisUnorthogonalizer(hiddenLayer1ListOfListsCopy, FSMMatrixExp=transformationScalingFactor, divideFeatureEntriesByDiagonal=False, returnOriginalFeatureMatrix=True, normalizeOutput=False)[1]
+        else:
+            hiddenLayer2 = DANBasisUnorthogonalizer(hiddenLayer1ListOfListsCopy, FSMMatrixExp=transformationScalingFactor, divideFeatureEntriesByDiagonal=True, returnModifiedFeatureMatrix=True, normalizeOutput=False)[1]
+
+        layer2Dict = {}
+
+        for rowIndexSlow in tqdm(range(len(hiddenLayer2))):
+            
+            for columnIndexSlow in range(len(hiddenLayer2[0])):
+
+                if hiddenLayer2[rowIndexSlow][columnIndexSlow] >= pruneParam:
+
+                    layer2Dict[f"{rowIndexSlow}x{columnIndexSlow}"] = hiddenLayer2[rowIndexSlow][columnIndexSlow]
+
+        finalNetworkDict["2"] = layer2Dict
+
+        previousLayerDict = layer2Dict
+
+        for layerIndex in tqdm(range(numOfLayers - 2)):
+
+            print(f"Initializing layer {layerIndex + 2}...")
+
+            newLayerDict = {}
+
+            for previousLayerKeySlow, previousLayerValueSlow in previousLayerDict.items():
+
+                for previousLayerKeyFast, previousLayerValueFast in previousLayerDict.items():
+
+                    if kernelFunction(previousLayerValueSlow, previousLayerValueFast) >= pruneParam:
+
+                        newLayerDict[f"{previousLayerKeySlow}x{previousLayerKeyFast}"] = kernelFunction(previousLayerValueSlow, previousLayerValueFast)
+            
+            finalNetworkDict[f"{layerIndex + 3}"] = newLayerDict
+
+            previousLayerDict = newLayerDict
+
+
+        print("Training network...")
+
+
+        DictOfNetworkListAndDicts = finalNetworkDict
+
+        coefficientMatrixListOfLists = []
     
-    coefficientMatrixListOfLists = []
-    i = 27
-    for dataMemberList in listOfNetworkListAndDicts["1"]:
+        for dataMemberList in tqdm(DictOfNetworkListAndDicts["1"]):
 
-        print(i)
-        if not DANFirstLayerBool:
+            if not DANFirstLayerBool:
 
-            newFeatureList = dataMemberList
+                newFeatureList = dataMemberList
+
+            if DANFirstLayerBool:
+
+                newDictOfNetworkListAndDicts = copy.deepcopy(DictOfNetworkListAndDicts)
+
+                newFeatureList = []
+
+                initialOutputVector = []
+
+                for rowIndex in range(len(DictOfNetworkListAndDicts["1"])):
+
+                    dotProductSum = 0
+
+                    for columnIndex in range(len(DictOfNetworkListAndDicts["1"][0])):
+                        
+                        dotProductSum += (DictOfNetworkListAndDicts["1"][rowIndex][columnIndex] * dataMemberList[columnIndex])
+
+                    initialOutputVector.append(dotProductSum)
+
+                for rowIndex in range(len(DictOfNetworkListAndDicts["1"])):
+
+                    for columnIndex in range(len(DictOfNetworkListAndDicts["1"][0])): 
+
+                        newDictOfNetworkListAndDicts["1"][rowIndex][columnIndex] = DictOfNetworkListAndDicts["1"][rowIndex][columnIndex] * initialOutputVector[rowIndex]
+                
+                for columnIndex in range(len(DictOfNetworkListAndDicts["1"][0])):
+
+                    maxColumnVal = 0
+
+                    for rowIndex in range(len(DictOfNetworkListAndDicts["1"])):
+
+                        if newDictOfNetworkListAndDicts["1"][rowIndex][columnIndex] > maxColumnVal:
+
+                            maxColumnVal = newDictOfNetworkListAndDicts["1"][rowIndex][columnIndex]
+
+                    newFeatureList.append(maxColumnVal)
 
 
-        if DANFirstLayerBool:
 
-            newListOfNetworkListAndDicts = copy.deepcopy(listOfNetworkListAndDicts)
+            layerTwoInputTensorDict = {}
+
+            for slowIndex in range(len(newFeatureList)):
+
+                for fastIndex in range(len(newFeatureList)):
+
+                    if f"{slowIndex}x{fastIndex}" in DictOfNetworkListAndDicts["2"].keys():
+
+                        layerTwoInputTensorDict[f"{slowIndex}x{fastIndex}"] = kernelFunction(newFeatureList[slowIndex], newFeatureList[fastIndex])
+
+            layerTwoOutputDict = {}
+
+            for dictKeys in layerTwoInputTensorDict.keys():
+
+                layerTwoOutputDict[dictKeys] = kernelFunction(layerTwoInputTensorDict[dictKeys], DictOfNetworkListAndDicts["2"][dictKeys])
+
+            
+
+            newInputDict = layerTwoOutputDict
+
+            for networkIndex in range(3, self.numOfLayers + 1):
+
+                newOutputDict = {}
+
+                for newInputKeySlow in newInputDict.keys():
+
+                    for newInputKeyFast in newInputDict.keys():
+
+                        if f"{newInputKeySlow}x{newInputKeyFast}" in DictOfNetworkListAndDicts[f"{networkIndex}"]:
+                        
+                            inputKernel = kernelFunction(newInputDict[f"{newInputKeySlow}"], newInputDict[f"{newInputKeyFast}"])
+
+                            newOutputDict[f"{newInputKeySlow}x{newInputKeyFast}"] = kernelFunction(DictOfNetworkListAndDicts[f"{networkIndex}"][f"{newInputKeySlow}x{newInputKeyFast}"], inputKernel)
+
+                newInputDict = newOutputDict
+            
+
+            sortedKeys = sorted(newInputDict.keys()) 
+
+            coefficientMatrixListOfLists.append([newInputDict[k] for k in sortedKeys])
+            
+        numpyCoefficientMatrix = np.array(coefficientMatrixListOfLists)
+
+
+        print("Solving final system of equations...")
+
+        print("Hidden layer 2 hash:", hash(np.array(hiddenLayer2).tobytes()))
+
+        self.SolutionsDict = {}
+        self.FeatureKeyOrder = sortedKeys 
+
+        for outputVecKey, outputVec in tqdm(outputDict.items()):
+
+            numpyOutputVector = np.array(outputVec)
+
+            if leastSquareSolutionNorm:
+                Solutions = np.linalg.lstsq(numpyCoefficientMatrix, numpyOutputVector, rcond=None)[0]
+
+            elif ridgeRegression:
+                n = numpyCoefficientMatrix.shape[1]
+                Solutions = np.linalg.solve(numpyCoefficientMatrix.T @ numpyCoefficientMatrix + self.lambdaVar * np.eye(n), numpyCoefficientMatrix.T @ numpyOutputVector)
+
+            self.SolutionsDict[outputVecKey] = Solutions
+
+        
+        DictOfNetworkListAndDicts["Solutions"] = self.SolutionsDict
+
+        self.DictOfNetworkListAndDicts = DictOfNetworkListAndDicts
+
+        self.TEKN = DictOfNetworkListAndDicts
+            
+        print("Network trained!")
+
+
+
+    def getOutput(self, inputVector):
+
+        print("Getting output...")
+
+        if not self.DANFirstLayerBool:
+
+            newFeatureList = inputVector
+
+        if self.DANFirstLayerBool:
+
+            newDictOfNetworkListAndDicts = copy.deepcopy(self.DictOfNetworkListAndDicts)
 
             newFeatureList = []
 
             initialOutputVector = []
 
-            for rowIndex in range(len(listOfNetworkListAndDicts["1"])):
+            for rowIndex in range(len(self.DictOfNetworkListAndDicts["1"])):
 
                 dotProductSum = 0
 
-                for columnIndex in range(len(listOfNetworkListAndDicts["1"][0])):
-
-                    dotProductSum += (listOfNetworkListAndDicts["1"][rowIndex][columnIndex] * dataMemberList[columnIndex])
+                for columnIndex in range(len(self.DictOfNetworkListAndDicts["1"][0])):
+                    
+                    dotProductSum += (self.DictOfNetworkListAndDicts["1"][rowIndex][columnIndex] * inputVector[columnIndex])
 
                 initialOutputVector.append(dotProductSum)
 
-            for rowIndex in range(len(listOfNetworkListAndDicts["1"])):
+            for rowIndex in range(len(self.DictOfNetworkListAndDicts["1"])):
 
-                for columnIndex in range(len(listOfNetworkListAndDicts["1"][0])): 
+                for columnIndex in range(len(self.DictOfNetworkListAndDicts["1"][0])): 
 
-                    newListOfNetworkListAndDicts["1"][rowIndex][columnIndex] = listOfNetworkListAndDicts["1"][rowIndex][columnIndex] * initialOutputVector[rowIndex]
+                    newDictOfNetworkListAndDicts["1"][rowIndex][columnIndex] = self.DictOfNetworkListAndDicts["1"][rowIndex][columnIndex] * initialOutputVector[rowIndex]
             
-            for columnIndex in range(len(listOfNetworkListAndDicts["1"][0])):
+            for columnIndex in range(len(self.DictOfNetworkListAndDicts["1"][0])):
 
                 maxColumnVal = 0
 
-                for rowIndex in range(len(listOfNetworkListAndDicts["1"])):
+                for rowIndex in range(len(self.DictOfNetworkListAndDicts["1"])):
 
-                    if newListOfNetworkListAndDicts["1"][rowIndex][columnIndex] > maxColumnVal:
+                    if newDictOfNetworkListAndDicts["1"][rowIndex][columnIndex] > maxColumnVal:
 
-                        maxColumnVal = newListOfNetworkListAndDicts["1"][rowIndex][columnIndex]
+                        maxColumnVal = newDictOfNetworkListAndDicts["1"][rowIndex][columnIndex]
 
                 newFeatureList.append(maxColumnVal)
 
-        
+
+
         layerTwoInputTensorDict = {}
 
         for slowIndex in range(len(newFeatureList)):
 
             for fastIndex in range(len(newFeatureList)):
 
-                if f"{slowIndex}x{fastIndex}" in listOfNetworkListAndDicts["2"].keys():
+                if f"{slowIndex}x{fastIndex}" in self.DictOfNetworkListAndDicts["2"].keys():
 
-                    layerTwoInputTensorDict[f"{slowIndex}x{fastIndex}"] = kernelFunction(newFeatureList[slowIndex], newFeatureList[fastIndex])
+                    layerTwoInputTensorDict[f"{slowIndex}x{fastIndex}"] = self.kernelFunction(newFeatureList[slowIndex], newFeatureList[fastIndex])
 
         layerTwoOutputDict = {}
 
         for dictKeys in layerTwoInputTensorDict.keys():
 
-            layerTwoOutputDict[dictKeys] = kernelFunction(layerTwoInputTensorDict[dictKeys], listOfNetworkListAndDicts["2"][dictKeys])
+            layerTwoOutputDict[dictKeys] = self.kernelFunction(layerTwoInputTensorDict[dictKeys], self.DictOfNetworkListAndDicts["2"][dictKeys])
 
         
 
         newInputDict = layerTwoOutputDict
 
-        for networkIndex in range(3, len(listOfNetworkListAndDicts) + 1):
+        for networkIndex in range(3, self.numOfLayers + 1):
 
             newOutputDict = {}
 
@@ -154,30 +326,74 @@ def DIGNNEquationSolver(listOfNetworkListAndDicts, outputDict, DANFirstLayerBool
 
                 for newInputKeyFast in newInputDict.keys():
 
-                    if f"{newInputKeySlow}x{newInputKeyFast}" in listOfNetworkListAndDicts[f"{networkIndex}"]:
+                    if f"{newInputKeySlow}x{newInputKeyFast}" in self.DictOfNetworkListAndDicts[f"{networkIndex}"]:
                     
-                        inputKernel = kernelFunction(newInputDict[f"{newInputKeySlow}"], newInputDict[f"{newInputKeyFast}"])
+                        inputKernel = self.kernelFunction(newInputDict[f"{newInputKeySlow}"], newInputDict[f"{newInputKeyFast}"])
 
-                        newOutputDict[f"{newInputKeySlow}x{newInputKeyFast}"] = kernelFunction(listOfNetworkListAndDicts[f"{networkIndex}"][f"{newInputKeySlow}x{newInputKeyFast}"], inputKernel)
+                        newOutputDict[f"{newInputKeySlow}x{newInputKeyFast}"] = self.kernelFunction(self.DictOfNetworkListAndDicts[f"{networkIndex}"][f"{newInputKeySlow}x{newInputKeyFast}"], inputKernel)
 
             newInputDict = newOutputDict
         
 
         sortedKeys = sorted(newInputDict.keys()) 
-        coefficientMatrixListOfLists.append([newInputDict[k] for k in sortedKeys])
-        i -= 1
-    return len(coefficientMatrixListOfLists[0])
+
+        inputDictAsVector = np.array([newInputDict[k] for k in sortedKeys])
+
+        outputs = {}
+
+        for outputKey, solutionVector in self.SolutionsDict.items():
+            outputs[outputKey] = np.dot(inputDictAsVector, solutionVector)
+
+        return list(outputs.values())
 
 
 
-        
+
+            
 
 
 
 if __name__ == "__main__":
 
-    dataset = jetsSharksMinusOutput
+    def randomJetsSharksInputList(partialActivation=True):
 
-    model = dataTransformationEvolver(dataset, numOfLayers=4, pruneParam=0.5)
-    print(len(model["4"]), 41 ** 8)
-    print(DIGNNEquationSolver(model, 0))
+        nameList = [0] * 27
+        nameList[rn.randrange(27)] = 1
+        teamList = [0] * 2
+        teamList[rn.randrange(2)] = 1
+        ageList = [0] * 3
+        ageList[rn.randrange(3)] = 1
+        schoolList = [0] * 3
+        schoolList[rn.randrange(3)] = 1
+        marriedList = [0] * 3
+        marriedList[rn.randrange(3)] = 1
+        occList = [0] * 3
+        occList[rn.randrange(3)] = 1
+
+        finalList = [nameList, teamList, ageList, schoolList, marriedList, occList]
+
+        if partialActivation:
+            randNum = rn.randrange(6)
+            for index in range(len(finalList[randNum])):
+                finalList[randNum][index] = 0
+
+        returnList = []
+
+        for index1 in range(len(finalList)):
+            for index2 in range(len(finalList[index1])):
+                returnList.append(finalList[index1][index2])
+
+        return returnList
+
+    model = TensorEvolvedKernelNetwork(theData, numOfLayers=3, pruneParam=0, DANFirstLayerBool=False, ridgeRegression=True, leastSquareSolutionNorm=False)
+ 
+    randomInput = randomJetsSharksInputList(True)
+
+    dataInput = theData[0]
+
+    # output = model.getOutput(dataInput)
+
+    output = model.getOutput(randomInput)
+
+    print(output)
+
