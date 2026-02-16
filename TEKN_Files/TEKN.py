@@ -96,12 +96,15 @@ class TensorEvolvedKernelNetwork:
         layer2Dict = {}
 
         for rowIndexSlow in tqdm(range(len(hiddenLayer2))):
-            
-            for columnIndexSlow in range(len(hiddenLayer2[0])):
 
-                if hiddenLayer2[rowIndexSlow][columnIndexSlow] >= pruneParam:
+            for columnIndexSlow in range(rowIndexSlow, len(hiddenLayer2[0])):
 
-                    layer2Dict[f"{rowIndexSlow}x{columnIndexSlow}"] = hiddenLayer2[rowIndexSlow][columnIndexSlow]
+                value = hiddenLayer2[rowIndexSlow][columnIndexSlow]
+
+                if value >= pruneParam:
+
+                    layer2Dict[f"{rowIndexSlow}x{columnIndexSlow}"] = value
+
 
         finalNetworkDict["2"] = layer2Dict
 
@@ -113,17 +116,32 @@ class TensorEvolvedKernelNetwork:
 
             newLayerDict = {}
 
-            for previousLayerKeySlow, previousLayerValueSlow in previousLayerDict.items():
+            previousItems = list(previousLayerDict.items())
 
-                for previousLayerKeyFast, previousLayerValueFast in previousLayerDict.items():
+            for slowIndex in range(len(previousItems)):
 
-                    if kernelFunction(previousLayerValueSlow, previousLayerValueFast) >= pruneParam:
+                keySlow, valueSlow = previousItems[slowIndex]
 
-                        newLayerDict[f"{previousLayerKeySlow}x{previousLayerKeyFast}"] = kernelFunction(previousLayerValueSlow, previousLayerValueFast)
+                for fastIndex in range(slowIndex, len(previousItems)):
+
+                    keyFast, valueFast = previousItems[fastIndex]
+
+                    combinedKey = f"{keySlow}x{keyFast}"
+
+                    kernelVal = kernelFunction(valueSlow, valueFast)
+
+                    if kernelVal >= pruneParam:
+
+                        newLayerDict[combinedKey] = kernelVal
+
             
             finalNetworkDict[f"{layerIndex + 3}"] = newLayerDict
 
             previousLayerDict = newLayerDict
+        
+        finalLayerKey = str(self.numOfLayers)
+
+        self.FeatureKeyOrder = sorted(finalNetworkDict[finalLayerKey].keys())
 
 
         print("Training network...")
@@ -181,11 +199,14 @@ class TensorEvolvedKernelNetwork:
 
             for slowIndex in range(len(newFeatureList)):
 
-                for fastIndex in range(len(newFeatureList)):
+                for fastIndex in range(slowIndex, len(newFeatureList)):
 
-                    if f"{slowIndex}x{fastIndex}" in DictOfNetworkListAndDicts["2"].keys():
+                    combinedKey = f"{slowIndex}x{fastIndex}"
 
-                        layerTwoInputTensorDict[f"{slowIndex}x{fastIndex}"] = kernelFunction(newFeatureList[slowIndex], newFeatureList[fastIndex])
+                    if combinedKey in DictOfNetworkListAndDicts["2"]:
+
+                        layerTwoInputTensorDict[combinedKey] = kernelFunction(newFeatureList[slowIndex], newFeatureList[fastIndex])
+
 
             layerTwoOutputDict = {}
 
@@ -201,31 +222,44 @@ class TensorEvolvedKernelNetwork:
 
                 newOutputDict = {}
 
-                for newInputKeySlow in newInputDict.keys():
+                newInputItems = list(newInputDict.items())
 
-                    for newInputKeyFast in newInputDict.keys():
+                for slowIndex in range(len(newInputItems)):
 
-                        if f"{newInputKeySlow}x{newInputKeyFast}" in DictOfNetworkListAndDicts[f"{networkIndex}"]:
-                        
-                            inputKernel = kernelFunction(newInputDict[f"{newInputKeySlow}"], newInputDict[f"{newInputKeyFast}"])
+                    newInputKeySlow, newInputValueSlow = newInputItems[slowIndex]
 
-                            newOutputDict[f"{newInputKeySlow}x{newInputKeyFast}"] = kernelFunction(DictOfNetworkListAndDicts[f"{networkIndex}"][f"{newInputKeySlow}x{newInputKeyFast}"], inputKernel)
+                    for fastIndex in range(slowIndex, len(newInputItems)):
+
+                        newInputKeyFast, newInputValueFast = newInputItems[fastIndex]
+
+                        combinedKey = f"{newInputKeySlow}x{newInputKeyFast}"
+
+                        if combinedKey in DictOfNetworkListAndDicts[f"{networkIndex}"]:
+
+                            inputKernel = kernelFunction(newInputValueSlow, newInputValueFast)
+
+                            newOutputDict[combinedKey] = kernelFunction( DictOfNetworkListAndDicts[f"{networkIndex}"][combinedKey], inputKernel)
+
 
                 newInputDict = newOutputDict
             
 
-            sortedKeys = sorted(newInputDict.keys()) 
+            featureVector = []
 
-            coefficientMatrixListOfLists.append([newInputDict[k] for k in sortedKeys])
+            for key in self.FeatureKeyOrder:
+
+                featureVector.append(newInputDict.get(key, 0))
+
+            coefficientMatrixListOfLists.append(featureVector)
+
             
         numpyCoefficientMatrix = np.array(coefficientMatrixListOfLists)
 
 
         print("Solving final system of equations...")
-        
+
 
         self.SolutionsDict = {}
-        self.FeatureKeyOrder = sortedKeys 
 
         for outputVecKey, outputVec in tqdm(outputDict.items()):
 
@@ -301,11 +335,14 @@ class TensorEvolvedKernelNetwork:
 
         for slowIndex in range(len(newFeatureList)):
 
-            for fastIndex in range(len(newFeatureList)):
+            for fastIndex in range(slowIndex, len(newFeatureList)):
 
-                if f"{slowIndex}x{fastIndex}" in self.DictOfNetworkListAndDicts["2"].keys():
+                combinedKey = f"{slowIndex}x{fastIndex}"
 
-                    layerTwoInputTensorDict[f"{slowIndex}x{fastIndex}"] = self.kernelFunction(newFeatureList[slowIndex], newFeatureList[fastIndex])
+                if combinedKey in self.DictOfNetworkListAndDicts["2"]:
+
+                    layerTwoInputTensorDict[combinedKey] = self.kernelFunction(newFeatureList[slowIndex], newFeatureList[fastIndex])
+
 
         layerTwoOutputDict = {}
 
@@ -321,22 +358,30 @@ class TensorEvolvedKernelNetwork:
 
             newOutputDict = {}
 
-            for newInputKeySlow in newInputDict.keys():
+            newInputItems = list(newInputDict.items())
 
-                for newInputKeyFast in newInputDict.keys():
+            for slowIndex in range(len(newInputItems)):
 
-                    if f"{newInputKeySlow}x{newInputKeyFast}" in self.DictOfNetworkListAndDicts[f"{networkIndex}"]:
-                    
-                        inputKernel = self.kernelFunction(newInputDict[f"{newInputKeySlow}"], newInputDict[f"{newInputKeyFast}"])
+                newInputKeySlow, newInputValueSlow = newInputItems[slowIndex]
 
-                        newOutputDict[f"{newInputKeySlow}x{newInputKeyFast}"] = self.kernelFunction(self.DictOfNetworkListAndDicts[f"{networkIndex}"][f"{newInputKeySlow}x{newInputKeyFast}"], inputKernel)
+                for fastIndex in range(slowIndex, len(newInputItems)):
+
+                    newInputKeyFast, newInputValueFast = newInputItems[fastIndex]
+
+                    combinedKey = f"{newInputKeySlow}x{newInputKeyFast}"
+
+                    if combinedKey in self.DictOfNetworkListAndDicts[f"{networkIndex}"]:
+
+                        inputKernel = self.kernelFunction(newInputValueSlow, newInputValueFast)
+
+                        newOutputDict[combinedKey] = self.kernelFunction(self.DictOfNetworkListAndDicts[f"{networkIndex}"][combinedKey], inputKernel)
+
 
             newInputDict = newOutputDict
         
 
-        sortedKeys = sorted(newInputDict.keys()) 
+        inputDictAsVector = np.array([newInputDict.get(key, 0) for key in self.FeatureKeyOrder])
 
-        inputDictAsVector = np.array([newInputDict[k] for k in sortedKeys])
 
         outputs = {}
 
@@ -384,7 +429,7 @@ if __name__ == "__main__":
 
         return returnList
 
-    model = TensorEvolvedKernelNetwork(theData, numOfLayers=3, pruneParam=0, DANFirstLayerBool=False, ridgeRegression=True, leastSquareSolutionNorm=False)
+    model = TensorEvolvedKernelNetwork(theData, numOfLayers=3, pruneParam=0.5, DANFirstLayerBool=False, ridgeRegression=True, leastSquareSolutionNorm=False)
  
     randomInput = randomJetsSharksInputList(True)
 
@@ -395,4 +440,3 @@ if __name__ == "__main__":
     output = model.getOutput(randomInput)
 
     print(output)
-
