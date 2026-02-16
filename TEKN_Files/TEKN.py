@@ -37,7 +37,7 @@ def neuronInspiredKernel(element1, element2, gammaParam=1):
 
 class TensorEvolvedKernelNetwork:
     
-    def __init__(self, originalBinaryDataset, numOfLayers=3, divideLayer2ByDiagonal=True, DANFirstLayerBool=True, kernelFunction=neuronInspiredKernel, transformationScalingFactor=1, pruneParam=0.1, leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=0.0001):
+    def __init__(self, originalBinaryDataset, numOfLayers=3, divideLayer2ByDiagonal=True, DANFirstLayerBool=False, kernelFunction=neuronInspiredKernel, transformationScalingFactor=1, pruneParam=0.1, leastSquareSolutionNorm=True, ridgeRegression=False, lambdaVar=0.0001):
 
         originalBinaryDataset = copy.deepcopy(originalBinaryDataset)
 
