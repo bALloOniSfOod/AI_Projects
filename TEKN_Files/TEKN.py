@@ -6,7 +6,7 @@
 # etc. for an arbitrary depth of the network (all the while pruning low-similarity nodes). An input is then 
 # expanded via a similarity tensor and applied to the remaining nodes of a given layer, before that output is 
 # similarily tensor-expanded and the process repeats, before finally undergoing a KRR-like operation to find the 
-# final weights to fit a specific output. (KRR not implemented yet)
+# final weights to fit a specific output. 
 
 
 
